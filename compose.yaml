@@ -1,0 +1,29 @@
+name: l2c1go-postgresql
+
+services:
+
+  db:
+    image: postgres:15-alpine
+    container_name: l2c1-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: l2c1
+    ports:
+      - "5432:5432"
+    volumes:
+      - l2c1go-postgresql:/var/lib/postgresql/data
+
+  adminer:
+    image: adminer
+    container_name: l2c1-adminer
+    restart: always
+    ports:
+      - "9090:8080"
+    depends_on:
+      - db
+
+volumes:
+  l2c1go-postgresql:
+

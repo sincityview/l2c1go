@@ -1,0 +1,19 @@
+l2c1go
+├── cmd
+│   ├── gameserver
+│   │   └── main.go
+│   └── loginserver
+│       └── main.go
+├── compose.yaml
+├── go.mod
+├── go.sum
+└── internal
+    ├── db
+    │   └── db.go
+    ├── gameserver
+    │   ├── crypt.go
+    │   ├── packets.go
+    │   └── server.go
+    └── loginserver
+        ├── crypt.go
+        └── server.go
