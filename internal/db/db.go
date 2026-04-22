@@ -1,4 +1,4 @@
-// l2c1go/internal/db
+// l2c1go/internal/db/db.go
 package db
 
 import (
@@ -28,21 +28,22 @@ func Init() {
 func createTables() {
 	ctx := context.Background()
 
-	// УДАЛИ ЭТУ СТРОКУ после первого успешного запуска, если хочешь сохранять чаров
-	Pool.Exec(ctx, "DROP TABLE IF EXISTS characters CASCADE;")
+	// DROP TABLE отключён, чтобы персонажи не исчезали при перезапуске
+	// Раскомментируй только если хочешь сбросить всё:
+	// Pool.Exec(ctx, "DROP TABLE IF EXISTS characters CASCADE;")
 
 	// Аккаунты
-	Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS accounts (
+	_, _ = Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS accounts (
 		login TEXT PRIMARY KEY,
 		password TEXT NOT NULL
 	);`)
 
-	// Реестр ID
-	Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS object_id_registry (
+	// Реестр object_id
+	_, _ = Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS object_id_registry (
 		registry_id INT PRIMARY KEY,
 		last_object_id INT NOT NULL
 	);`)
-	Pool.Exec(ctx, "INSERT INTO object_id_registry (registry_id, last_object_id) VALUES (1, 100000) ON CONFLICT DO NOTHING")
+	_, _ = Pool.Exec(ctx, "INSERT INTO object_id_registry (registry_id, last_object_id) VALUES (1, 100000) ON CONFLICT DO NOTHING")
 
 	// Персонажи
 	_, err := Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS characters (
@@ -66,10 +67,13 @@ func createTables() {
 		men INT DEFAULT 25
 	);`)
 	if err != nil {
-		log.Fatalf("Ошибка создания characters: %v", err)
+		log.Fatalf("Ошибка создания таблицы characters: %v", err)
 	}
+
+	log.Println("Таблицы проверены/созданы")
 }
 
+// CheckAccount — уже была
 func CheckAccount(login, password string) (bool, error) {
 	var dbPassword string
 	err := Pool.QueryRow(context.Background(), "SELECT password FROM accounts WHERE login = $1", login).Scan(&dbPassword)
@@ -79,27 +83,46 @@ func CheckAccount(login, password string) (bool, error) {
 	return dbPassword == password, nil
 }
 
+// === ВАЖНЫЕ ТИП И ФУНКЦИИ ДЛЯ GAMESERVER ===
 type CharData struct {
-	Name                       string
-	ObjectID, Race, Class, Sex, Level int32
+	Name      string
+	ObjectID  int32
+	Race      int32
+	Class     int32
+	Sex       int32
+	Level     int32
 }
 
-func CreateCharacter(login, name string, race, class, sex uint32) error {
+func CreateCharacter(login, name string, race, classId, sex uint32) error {
 	ctx := context.Background()
 	var objID int32
-	err := Pool.QueryRow(ctx, "UPDATE object_id_registry SET last_object_id = last_object_id + 1 WHERE registry_id = 1 RETURNING last_object_id").Scan(&objID)
+
+	err := Pool.QueryRow(ctx, `
+		UPDATE object_id_registry 
+		SET last_object_id = last_object_id + 1 
+		WHERE registry_id = 1 
+		RETURNING last_object_id
+	`).Scan(&objID)
 	if err != nil {
 		return err
 	}
-	_, err = Pool.Exec(ctx, 
-		"INSERT INTO characters (object_id, account_name, char_name, race_id, class_id, sex) VALUES ($1, $2, $3, $4, $5, $6)",
-		objID, login, name, race, class, sex)
+
+	_, err = Pool.Exec(ctx, `
+		INSERT INTO characters 
+		(object_id, account_name, char_name, race_id, class_id, sex)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, objID, login, name, race, classId, sex)
+
 	return err
 }
 
 func GetCharacters(login string) ([]CharData, error) {
 	ctx := context.Background()
-	rows, err := Pool.Query(ctx, "SELECT char_name, object_id, race_id, class_id, sex, level FROM characters WHERE account_name = $1", login)
+	rows, err := Pool.Query(ctx, `
+		SELECT char_name, object_id, race_id, class_id, sex, level 
+		FROM characters 
+		WHERE account_name = $1
+	`, login)
 	if err != nil {
 		return nil, err
 	}
