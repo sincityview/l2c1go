@@ -140,3 +140,18 @@ func GetCharacters(login string) ([]CharData, error) {
 	}
 	return chars, nil
 }
+
+func GetCharacterByName(name string) (*CharData, error) {
+	ctx := context.Background()
+	var c CharData
+	err := Pool.QueryRow(ctx, `
+		SELECT char_name, object_id, race_id, class_id, sex, level 
+		FROM characters 
+		WHERE char_name = $1
+	`, name).Scan(&c.Name, &c.ObjectID, &c.Race, &c.Class, &c.Sex, &c.Level)
+	
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
