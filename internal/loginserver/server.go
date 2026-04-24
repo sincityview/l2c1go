@@ -179,8 +179,8 @@ func PackCharSelectionInfo(login string, chars []db.CharData) []byte {
 
 		binary.Write(buf, binary.LittleEndian, uint32(char.Sex))
 		binary.Write(buf, binary.LittleEndian, uint32(char.Race))
-		binary.Write(buf, binary.LittleEndian, uint32(char.Class))
-		binary.Write(buf, binary.LittleEndian, uint32(1)) // active
+		binary.Write(buf, binary.LittleEndian, uint32(char.ClassID)) // Замени Class на ClassID
+		binary.Write(buf, binary.LittleEndian, uint32(1)) // Active
 
 		binary.Write(buf, binary.LittleEndian, int32(-70880)) // x
 		binary.Write(buf, binary.LittleEndian, int32(257360)) // y

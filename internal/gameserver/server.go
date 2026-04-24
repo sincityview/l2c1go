@@ -83,11 +83,23 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 			chars, _ := db.GetCharacters(accountLogin)
 			s.sendEncryptedPacket(conn, crypt, PackCharSelectionInfo(accountLogin, chars))
 
-		case 0x0D: // Character Selected (Нажата кнопка START)
+		case 0x0D: // Character Selected
 			chars, _ := db.GetCharacters(accountLogin)
 			if len(chars) > 0 {
-				char = &chars[0] // Сохраняем ссылку на персонажа
-				log.Printf("GS: Character [%s] (ID: %d) entering world...", char.Name, char.ObjectID)
+				char = &chars[0]
+				
+				// 1. Собираем инвентарь
+				inventory, _ := db.GetInventory(char.ObjectID)
+				
+				// 2. Распределяем по слотам для UserInfo
+				var paperdollObj [15]int32
+				var paperdollItem [15]int32
+				for _, it := range inventory {
+					if it.Loc == "PAPERDOLL" && it.LocData >= 0 && it.LocData < 15 {
+						paperdollObj[it.LocData] = it.ObjectID
+						paperdollItem[it.LocData] = it.ItemID
+					}
+				}
 
 				s.sendEncryptedPacket(conn, crypt, PackSSQInfo())
 				s.sendEncryptedPacket(conn, crypt, PackCharSelected(char))
@@ -96,11 +108,17 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 
 				time.Sleep(200 * time.Millisecond)
 				
-				s.sendEncryptedPacket(conn, crypt, PackUserInfo(char))
-				s.sendEncryptedPacket(conn, crypt, PackItemList())
-				
-				log.Printf("GS: All entry packets sent for [%s].", char.Name)
+				// 3. Шлем UserInfo с вещами и ItemList
+				s.sendEncryptedPacket(conn, crypt, PackUserInfo(char, paperdollObj, paperdollItem))
+				s.sendEncryptedPacket(conn, crypt, PackItemList(inventory))
 			}
+
+		case 0x0F: // RequestItemList от клиента
+			if char == nil { break }
+			log.Printf("GS: [%s] запрашивает инвентарь", char.Name)
+			inventory, _ := db.GetInventory(char.ObjectID)
+			// Теперь шлем правильный пакет 0x27
+			s.sendEncryptedPacket(conn, crypt, PackItemList(inventory))
 
 		case 0x01: // MoveBackwardToLocation
 			if char == nil { break }
@@ -141,15 +159,14 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 
 		case 0x38: // Say2
 			text := parseL2String(data[1:])
-			chatType := binary.LittleEndian.Uint32(data[len(data)-4:])
-
-			// Если сообщение начинается с точки — это команда
-			if len(text) > 0 && text[0] == '.' {
-				s.handleAdminCommand(conn, crypt, char, text)
-			} else {
-				log.Printf("GS: [%s]: %s", char.Name, text)
-				s.sendEncryptedPacket(conn, crypt, PackSay2(char.ObjectID, chatType, char.Name, text))
+			chatType := uint32(0)
+			if len(data) >= 4 {
+				chatType = binary.LittleEndian.Uint32(data[len(data)-4:])
 			}
+			// Выводим тип чата в HEX формате (например, 0x08)
+			log.Printf("GS: [%s] (ChatType: 0x%02X): %s", char.Name, chatType, text)
+			
+			s.sendEncryptedPacket(conn, crypt, PackSay2(char.ObjectID, chatType, char.Name, text))
 
 		case 0x63: // RequestQuestList
 			s.sendEncryptedPacket(conn, crypt, PackQuestList())
@@ -195,6 +212,30 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 					s.sendEncryptedPacket(conn, crypt, PackCharSelectionInfo(accountLogin, chars))
 				}
 			}
+
+		case 0x04: // Action (клик по объекту)
+			targetID := int32(binary.LittleEndian.Uint32(data[1:5]))
+			// Сообщаем клиенту: "Да, ты выделил этот объект"
+			s.sendEncryptedPacket(conn, crypt, PackMyTargetSelected(targetID))
+
+		case 0x1B: // SocialAction (Клиент нажал кнопку действия)
+			if char == nil {
+				break
+			}
+			// Читаем ID анимации (2 - Поклон, 3 - Махать рукой и т.д.)
+			actionID := binary.LittleEndian.Uint32(data[1:5])
+			
+			log.Printf("GS: [%s] выполняет социальное действие: %d", char.Name, actionID)
+
+			// Отправляем пакет SocialAction обратно клиенту
+			// В будущем этот пакет должны получать все игроки вокруг, чтобы видеть твою анимацию
+			s.sendEncryptedPacket(conn, crypt, PackSocialAction(char.ObjectID, actionID))
+
+		case 0x37: // RequestTargetCancel
+			if char == nil { break }
+			log.Printf("GS: [%s] снял выделение цели", char.Name)
+			s.sendEncryptedPacket(conn, crypt, PackTargetUnselected(char))
+
 
 		default:
 			log.Printf("GS: Unknown Packet 0x%02X | Data: %s", packetID, hexDump(data))
@@ -273,4 +314,26 @@ func (s *GameServer) handleAdminCommand(conn net.Conn, crypt *GameCrypt, char *d
     default:
         s.sendEncryptedPacket(conn, crypt, PackSay2(char.ObjectID, 0, "System", "Unknown command"))
     }
+}
+
+// Получает два массива по 15 слотов: IDs предметов и их ObjectIDs
+func getPaperdollArrays(charID int32) ([15]int32, [15]int32) {
+	var objIDs [15]int32
+	var itemIDs [15]int32
+
+	items, err := db.GetInventory(charID)
+	if err != nil {
+		return objIDs, itemIDs
+	}
+
+	for _, it := range items {
+		if it.Loc == "PAPERDOLL" {
+			slot := it.LocData
+			if slot >= 0 && slot < 15 {
+				objIDs[slot] = it.ObjectID
+				itemIDs[slot] = it.ItemID
+			}
+		}
+	}
+	return objIDs, itemIDs
 }

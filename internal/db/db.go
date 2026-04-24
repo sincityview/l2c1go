@@ -1,129 +1,105 @@
-// l2c1go/internal/db/db.go
 package db
 
 import (
-	"context"
+	"database/sql"
 	"log"
+	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/go-sql-driver/mysql"
 )
 
-var Pool *pgxpool.Pool
+var DB *sql.DB
+
+// CharData — структура, полностью соответствующая таблице Mobius
+type CharData struct {
+	AccountName string
+	ObjectID    int32  // charId
+	Name        string // char_name
+	Level       int32
+	MaxHp       int32
+	CurHp       int32
+	MaxMp       int32
+	CurMp       int32
+	Face        int32
+	HairStyle   int32
+	HairColor   int32
+	Sex         int32
+	X, Y, Z     int32
+	Exp         int64
+	Sp          int64
+	Karma       int32
+	ClassID     int32 
+
+// classid
+	Race        int32
+	Title       string
+}
+
+type ItemData struct {
+	ObjectID     int32
+	ItemID       int32
+	Count        int64
+	EnchantLevel int32
+	Loc          string
+	LocData      int32 // Для PAPERDOLL здесь хранится ID слота (экипировка)
+}
 
 func Init() {
-	dsn := "postgres://postgres:secret@localhost:5432/l2c1?sslmode=disable"
+	// user:password@tcp(localhost:3306)/darkages
+	dsn := "mariadb-user:mariadb-password@tcp(localhost:3306)/darkages"
+	
 	var err error
-	Pool, err = pgxpool.New(context.Background(), dsn)
+	DB, err = sql.Open("mysql", dsn)
 	if err != nil {
-		log.Fatalf("Ошибка пула БД: %v", err)
+		log.Fatalf("Ошибка открытия MariaDB: %v", err)
 	}
-	if err := Pool.Ping(context.Background()); err != nil {
+
+	DB.SetMaxOpenConns(25)
+	DB.SetMaxIdleConns(10)
+	DB.SetConnMaxLifetime(time.Hour)
+
+	if err := DB.Ping(); err != nil {
 		log.Fatalf("БД недоступна: %v", err)
 	}
 
 	createTables()
-	log.Println("База данных PostgreSQL инициализирована")
+	log.Println("MariaDB инициализирована успешно")
 }
 
 func createTables() {
-	ctx := context.Background()
-
-	// DROP TABLE отключён, чтобы персонажи не исчезали при перезапуске
-	// Раскомментируй только если хочешь сбросить всё:
-	// Pool.Exec(ctx, "DROP TABLE IF EXISTS characters CASCADE;")
-
-	// Аккаунты
-	_, _ = Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS accounts (
-		login TEXT PRIMARY KEY,
-		password TEXT NOT NULL
-	);`)
-
-	// Реестр object_id
-	_, _ = Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS object_id_registry (
+	// Реестр для выдачи новых ID персонажам
+	_, err := DB.Exec(`CREATE TABLE IF NOT EXISTS object_id_registry (
 		registry_id INT PRIMARY KEY,
 		last_object_id INT NOT NULL
 	);`)
-	_, _ = Pool.Exec(ctx, "INSERT INTO object_id_registry (registry_id, last_object_id) VALUES (1, 100000) ON CONFLICT DO NOTHING")
+	if err != nil { log.Fatal(err) }
 
-	// Персонажи
-	_, err := Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS characters (
-		object_id INT PRIMARY KEY,
-		account_name TEXT REFERENCES accounts(login),
-		char_name TEXT UNIQUE NOT NULL,
-		race_id INT,
-		class_id INT,
-		sex INT,
-		x INT DEFAULT -70880,
-		y INT DEFAULT 257360,
-		z INT DEFAULT -3080,
-		level INT DEFAULT 1,
-		hp DOUBLE PRECISION DEFAULT 100,
-		mp DOUBLE PRECISION DEFAULT 50,
-		str INT DEFAULT 40,
-		dex INT DEFAULT 30,
-		con INT DEFAULT 43,
-		int INT DEFAULT 21,
-		wit INT DEFAULT 11,
-		men INT DEFAULT 25
-	);`)
-	if err != nil {
-		log.Fatalf("Ошибка создания таблицы characters: %v", err)
-	}
-
-	log.Println("Таблицы проверены/созданы")
+	_, _ = DB.Exec("INSERT IGNORE INTO object_id_registry (registry_id, last_object_id) VALUES (1, 100000)")
+	
+	// Таблицу characters и accounts мы НЕ создаем здесь, так как ты импортировал их из Mobius SQL.
+	// Но если их нет, Mobius-логика может сломаться.
 }
 
-// CheckAccount — уже была
 func CheckAccount(login, password string) (bool, error) {
-	var dbPassword string
-	err := Pool.QueryRow(context.Background(), "SELECT password FROM accounts WHERE login = $1", login).Scan(&dbPassword)
-	if err != nil {
-		return false, nil
+	var dbPassword sql.NullString
+	err := DB.QueryRow("SELECT password FROM accounts WHERE login = ?", login).Scan(&dbPassword)
+	
+	if err == sql.ErrNoRows {
+		log.Printf("Авторегистрация аккаунта: %s", login)
+		_, err = DB.Exec("INSERT INTO accounts (login, password) VALUES (?, ?)", login, password)
+		return true, err
 	}
-	return dbPassword == password, nil
-}
-
-// === ВАЖНЫЕ ТИП И ФУНКЦИИ ДЛЯ GAMESERVER ===
-type CharData struct {
-	Name      string
-	ObjectID  int32
-	Race      int32
-	Class     int32
-	Sex       int32
-	Level     int32
-	X, Y, Z   int32 // Добавляем координаты
-}
-
-func CreateCharacter(login, name string, race, classId, sex uint32) error {
-	ctx := context.Background()
-	var objID int32
-
-	err := Pool.QueryRow(ctx, `
-		UPDATE object_id_registry 
-		SET last_object_id = last_object_id + 1 
-		WHERE registry_id = 1 
-		RETURNING last_object_id
-	`).Scan(&objID)
-	if err != nil {
-		return err
-	}
-
-	_, err = Pool.Exec(ctx, `
-		INSERT INTO characters 
-		(object_id, account_name, char_name, race_id, class_id, sex)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, objID, login, name, race, classId, sex)
-
-	return err
+	
+	if err != nil { return false, err }
+	return dbPassword.String == password, nil
 }
 
 func GetCharacters(login string) ([]CharData, error) {
-	ctx := context.Background()
-	// Добавляем x, y, z в SELECT
-	rows, err := Pool.Query(ctx, `
-		SELECT char_name, object_id, race_id, class_id, sex, level, x, y, z 
+	// Тянем основные поля для лобби и входа
+	rows, err := DB.Query(`
+		SELECT char_name, charId, race, classid, sex, level, x, y, z, title, curHp, maxHp, curMp, maxMp 
 		FROM characters 
-		WHERE account_name = $1
+		WHERE account_name = ?
 	`, login)
 	if err != nil {
 		return nil, err
@@ -133,38 +109,79 @@ func GetCharacters(login string) ([]CharData, error) {
 	var chars []CharData
 	for rows.Next() {
 		var c CharData
-		// Добавляем сканирование x, y, z
-		err := rows.Scan(&c.Name, &c.ObjectID, &c.Race, &c.Class, &c.Sex, &c.Level, &c.X, &c.Y, &c.Z)
+		var title sql.NullString
+		// Сканируем в соответствии с порядком в SELECT
+		err := rows.Scan(&c.Name, &c.ObjectID, &c.Race, &c.ClassID, &c.Sex, &c.Level, &c.X, &c.Y, &c.Z, &title, &c.CurHp, &c.MaxHp, &c.CurMp, &c.MaxMp)
 		if err != nil {
 			log.Printf("Scan error: %v", err)
 			continue
 		}
+		c.Title = title.String
 		chars = append(chars, c)
 	}
 	return chars, nil
 }
 
-func GetCharacterByName(name string) (*CharData, error) {
-	ctx := context.Background()
-	var c CharData
-	err := Pool.QueryRow(ctx, `
-		SELECT char_name, object_id, race_id, class_id, sex, level 
-		FROM characters 
-		WHERE char_name = $1
-	`, name).Scan(&c.Name, &c.ObjectID, &c.Race, &c.Class, &c.Sex, &c.Level)
-	
+func CreateCharacter(login, name string, race, classId, sex uint32) error {
+	tx, err := DB.Begin()
+	if err != nil { return err }
+
+	var objID int32
+	err = tx.QueryRow("SELECT last_object_id FROM object_id_registry WHERE registry_id = 1 FOR UPDATE").Scan(&objID)
 	if err != nil {
-		return nil, err
+		tx.Rollback()
+		return err
 	}
-	return &c, nil
+	
+	objID++
+	
+	_, err = tx.Exec("UPDATE object_id_registry SET last_object_id = ? WHERE registry_id = 1", objID)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Вставка в таблицу Mobius (charId, char_name и т.д.)
+	_, err = tx.Exec(`
+		INSERT INTO characters (
+			charId, account_name, char_name, race, classid, sex, 
+			x, y, z, curHp, maxHp, curMp, maxMp, level, title
+		)
+		VALUES (?, ?, ?, ?, ?, ?, -70880, 257360, -3080, 100, 100, 50, 50, 1, '')
+	`, objID, login, name, race, classId, sex)
+
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func UpdateCharacterLocation(objID int32, x, y, z int32) error {
-	ctx := context.Background()
-	_, err := Pool.Exec(ctx, `
-		UPDATE characters 
-		SET x = $1, y = $2, z = $3 
-		WHERE object_id = $4
-	`, x, y, z, objID)
+	_, err := DB.Exec("UPDATE characters SET x = ?, y = ?, z = ? WHERE charId = ?", x, y, z, objID)
 	return err
+}
+
+func GetInventory(ownerID int32) ([]ItemData, error) {
+	rows, err := DB.Query(`
+		SELECT object_id, item_id, count, enchant_level, loc, loc_data 
+		FROM items 
+		WHERE owner_id = ?
+	`, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []ItemData
+	for rows.Next() {
+		var it ItemData
+		err := rows.Scan(&it.ObjectID, &it.ItemID, &it.Count, &it.EnchantLevel, &it.Loc, &it.LocData)
+		if err != nil {
+			continue
+		}
+		items = append(items, it)
+	}
+	return items, nil
 }
