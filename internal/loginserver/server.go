@@ -1,4 +1,4 @@
-// l2c1go/internal/loginserver
+// l2c1go/internal/loginserver/server.go
 package loginserver
 
 import (
@@ -8,7 +8,7 @@ import (
 	"log"
 	"net"
 
-	"l2c1go/internal/db" // Импорт твоего пакета БД
+	"l2c1go/internal/db"
 )
 
 type Server struct {
@@ -48,9 +48,11 @@ func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	crypt := NewCrypt()
+	var accountLogin string
 
 	// 1. Отправляем Init пакет (0x00)
 	if err := s.sendInit(conn); err != nil {
+		log.Printf("Failed to send Init packet: %v", err)
 		return
 	}
 
@@ -66,56 +68,154 @@ func (s *Server) handleConnection(conn net.Conn) {
 			break
 		}
 
-		// Дешифруем пакет
 		crypt.Decrypt(data)
 		packetID := data[0]
 
 		switch packetID {
 		case 0x00: // RequestAuthLogin
-			// В C1 логин и пароль идут в фиксированных полях (14 и 16 байт)
 			login := string(bytes.TrimRight(data[1:15], "\x00"))
 			password := string(bytes.TrimRight(data[15:31], "\x00"))
 
-			// --- ПРОВЕРКА ЧЕРЕЗ БАЗУ ДАННЫХ ---
 			isValid, err := db.CheckAccount(login, password)
-			if err != nil {
-				log.Printf("DB Error for %s: %v", login, err)
-				return
-			}
-			if !isValid {
-				log.Printf("Auth Failed: login [%s] or password incorrect", login)
-				// В идеале тут слать LoginFail (0x01), но пока просто рвем коннект
+			if err != nil || !isValid {
+				if err != nil {
+					log.Printf("DB Error for %s: %v", login, err)
+				} else {
+					log.Printf("Auth Failed: login [%s] or password incorrect", login)
+				}
+				s.sendLoginFail(conn, crypt, 0x02) // Wrong password
 				return
 			}
 
+			accountLogin = login
 			log.Printf("User [%s] authenticated successfully via DB", login)
-			
-			// Сессионные ключи для гейм-сервера
+
 			s.sendLoginOk(conn, crypt, 0x11223344, 0x55667788)
 
 		case 0x05: // RequestServerList
+			if accountLogin == "" {
+				s.sendLoginFail(conn, crypt, 0x01)
+				return
+			}
 			s.sendServerList(conn, crypt)
 
 		case 0x02: // RequestServerLogin
+			if accountLogin == "" {
+				s.sendLoginFail(conn, crypt, 0x01)
+				return
+			}
 			s.sendPlayOk(conn, crypt, 0x11223344, 0x55667788)
 
 		case 0x0B: // RequestCharacterCreate
-			// ... парсинг имени уже есть ...
+			charName := ""
+			for i := 1; i < 33 && i < len(data); i += 2 {
+				if data[i] == 0 {
+					break
+				}
+				charName += string(data[i])
+			}
+
+			if charName == "" || accountLogin == "" {
+				log.Printf("Invalid character creation request")
+				s.sendCharacterCreateFail(conn, crypt)
+				return
+			}
+
 			race := binary.LittleEndian.Uint32(data[33:37])
-			gender := binary.LittleEndian.Uint32(data[37:41]) // Следующие 4 байта
+			gender := binary.LittleEndian.Uint32(data[37:41])
 			classId := binary.LittleEndian.Uint32(data[41:45])
-			
-			log.Printf("GS: Создание персонажа [%s], Пол: %d", charName, gender)
-			db.CreateCharacter(accountLogin, charName, race, classId, gender)
-			
+
+			log.Printf("LS: Request to create character [%s] for account [%s], race=%d, gender=%d, class=%d",
+				charName, accountLogin, race, gender, classId)
+
+			if err := db.CreateCharacter(accountLogin, charName, race, classId, gender); err != nil {
+				log.Printf("DB Error creating character %s: %v", charName, err)
+				s.sendCharacterCreateFail(conn, crypt)
+				return
+			}
+
 			s.sendCharacterCreateSuccess(conn, crypt)
 			s.sendCharSelectionInfo(conn, crypt, accountLogin)
 
 		default:
-			log.Printf("Unknown LS Packet: 0x%02x", packetID)
+			log.Printf("Unknown LS Packet: 0x%02x from %s", packetID, accountLogin)
 		}
 	}
 }
+
+// ==================== Packet Helpers (добавлено сюда) ====================
+
+// encodeUTF16 преобразует строку в L2 Unicode (UTF-16LE + null terminator)
+func encodeUTF16(s string) []byte {
+	res := make([]byte, 0, len(s)*2+2)
+	for _, r := range s {
+		buf := make([]byte, 2)
+		binary.LittleEndian.PutUint16(buf, uint16(r))
+		res = append(res, buf...)
+	}
+	res = append(res, 0x00, 0x00)
+	return res
+}
+
+// PackCharSelectionInfo — теперь доступна в loginserver
+func PackCharSelectionInfo(login string, chars []db.CharData) []byte {
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0x1F)
+
+	if len(chars) == 0 {
+		binary.Write(buf, binary.LittleEndian, uint32(0))
+		return buf.Bytes()
+	}
+
+	binary.Write(buf, binary.LittleEndian, uint32(len(chars)))
+
+	for _, char := range chars {
+		buf.Write(encodeUTF16(char.Name))
+		binary.Write(buf, binary.LittleEndian, uint32(char.ObjectID))
+		buf.Write(encodeUTF16(login))
+		binary.Write(buf, binary.LittleEndian, uint32(0x55555555)) // sessionId
+		binary.Write(buf, binary.LittleEndian, uint32(0))          // clanId
+		binary.Write(buf, binary.LittleEndian, uint32(0))          // static 0
+
+		binary.Write(buf, binary.LittleEndian, uint32(char.Sex))
+		binary.Write(buf, binary.LittleEndian, uint32(char.Race))
+		binary.Write(buf, binary.LittleEndian, uint32(char.Class))
+		binary.Write(buf, binary.LittleEndian, uint32(1)) // active
+
+		binary.Write(buf, binary.LittleEndian, int32(-70880)) // x
+		binary.Write(buf, binary.LittleEndian, int32(257360)) // y
+		binary.Write(buf, binary.LittleEndian, int32(-3080))  // z
+
+		binary.Write(buf, binary.LittleEndian, float64(100.0)) // hp
+		binary.Write(buf, binary.LittleEndian, float64(50.0))  // mp
+
+		binary.Write(buf, binary.LittleEndian, uint32(0)) // sp
+		binary.Write(buf, binary.LittleEndian, uint32(0)) // exp
+		binary.Write(buf, binary.LittleEndian, uint32(char.Level))
+		binary.Write(buf, binary.LittleEndian, uint32(0)) // karma
+
+		for i := 0; i < 9; i++ {
+			binary.Write(buf, binary.LittleEndian, uint32(0))
+		}
+
+		for i := 0; i < 36; i++ {
+			binary.Write(buf, binary.LittleEndian, uint32(0))
+		}
+
+		binary.Write(buf, binary.LittleEndian, uint32(0)) // hairStyle
+		binary.Write(buf, binary.LittleEndian, uint32(0)) // hairColor
+		binary.Write(buf, binary.LittleEndian, uint32(0)) // face
+
+		binary.Write(buf, binary.LittleEndian, float64(100.0)) // maxHp
+		binary.Write(buf, binary.LittleEndian, float64(50.0))  // maxMp
+
+		binary.Write(buf, binary.LittleEndian, uint32(0)) // days left before delete
+	}
+
+	return buf.Bytes()
+}
+
+// ==================== Вспомогательные методы ====================
 
 func (s *Server) sendInit(conn net.Conn) error {
 	buf := new(bytes.Buffer)
@@ -139,24 +239,30 @@ func (s *Server) sendLoginOk(conn net.Conn, crypt *Crypt, k1, k2 uint32) {
 	binary.Write(buf, binary.LittleEndian, k1)
 	binary.Write(buf, binary.LittleEndian, k2)
 	buf.Write(make([]byte, 8))
+	s.sendEncryptedPacket(conn, crypt, buf.Bytes())
+}
 
+func (s *Server) sendLoginFail(conn net.Conn, crypt *Crypt, reason byte) {
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0x01)
+	buf.WriteByte(reason)
 	s.sendEncryptedPacket(conn, crypt, buf.Bytes())
 }
 
 func (s *Server) sendServerList(conn net.Conn, crypt *Crypt) {
 	buf := new(bytes.Buffer)
 	buf.WriteByte(0x04)
-	buf.WriteByte(0x01) // Count
-	buf.WriteByte(0x00) // Last ID
+	buf.WriteByte(0x01)
+	buf.WriteByte(0x00)
 
-	buf.WriteByte(0x01)                            // Server ID
-	buf.Write([]byte{127, 0, 0, 1})                // IP
+	buf.WriteByte(0x01)
+	buf.Write([]byte{127, 0, 0, 1})
 	binary.Write(buf, binary.LittleEndian, uint32(7777))
-	buf.WriteByte(0x00) // Age
-	buf.WriteByte(0x00) // pvp
+	buf.WriteByte(0x00)
+	buf.WriteByte(0x00)
 	binary.Write(buf, binary.LittleEndian, uint16(0))
 	binary.Write(buf, binary.LittleEndian, uint16(1000))
-	buf.WriteByte(0x01) // Status
+	buf.WriteByte(0x01)
 
 	s.sendEncryptedPacket(conn, crypt, buf.Bytes())
 }
@@ -167,18 +273,36 @@ func (s *Server) sendPlayOk(conn net.Conn, crypt *Crypt, k1, k2 uint32) {
 	binary.Write(buf, binary.LittleEndian, k1)
 	binary.Write(buf, binary.LittleEndian, k2)
 	buf.WriteByte(0x00)
-
 	s.sendEncryptedPacket(conn, crypt, buf.Bytes())
 }
 
+func (s *Server) sendCharacterCreateSuccess(conn net.Conn, crypt *Crypt) {
+	data := []byte{0x25, 0x01, 0x00, 0x00, 0x00}
+	s.sendEncryptedPacket(conn, crypt, data)
+}
+
+func (s *Server) sendCharacterCreateFail(conn net.Conn, crypt *Crypt) {
+	data := []byte{0x25, 0x00, 0x00, 0x00, 0x00}
+	s.sendEncryptedPacket(conn, crypt, data)
+}
+
+func (s *Server) sendCharSelectionInfo(conn net.Conn, crypt *Crypt, login string) {
+	chars, err := db.GetCharacters(login)
+	if err != nil {
+		log.Printf("Failed to get characters for %s: %v", login, err)
+		chars = nil
+	}
+	data := PackCharSelectionInfo(login, chars)
+	s.sendEncryptedPacket(conn, crypt, data)
+}
+
 func (s *Server) sendEncryptedPacket(conn net.Conn, crypt *Crypt, data []byte) {
-	// Дополнение до кратности 8 для Blowfish
 	padLen := 8 - (len(data) % 8)
 	if padLen < 8 {
 		data = append(data, make([]byte, padLen)...)
 	}
 	crypt.Encrypt(data)
-	s.writeRaw(conn, data)
+	_ = s.writeRaw(conn, data)
 }
 
 func (s *Server) writeRaw(conn net.Conn, data []byte) error {
