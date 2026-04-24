@@ -1,17 +1,22 @@
-### Lineage II Chronicle Dark Ages
+### Lineage II Dark Ages
 
 ------
 
+<br>
+
 #### Текущий прогресс:
-- **LoginServer:** Полная авторизация, шифрование Blowfish, выбор сервера.
-- **GameServer:** 
-  - Протоколы 411/414/419.
-  - Реализован Handshake и XOR-шифрование.
-  - Вход в мир, выбор персонажа, создание персонажа.
-  - Движение (MoveToLocation) с сохранением координат в БД.
-  - Чат (Say2) и системные сообщения.
-  - Корректный Logout и Restart.
-- **Database:** PostgreSQL
+- LoginServer: 
+  - Полная авторизация, шифрование Blowfish
+  - Выбор сервера
+- GameServer: 
+  - Протоколы 411/414/419
+  - Реализован Handshake и XOR-шифрование
+  - Вход в мир, создание персонажа, выбор персонажа
+  - Движение с сохранением координат в БД
+  - Чат и системные сообщения
+  - Корректный Logout и Restart
+- Database: 
+  - PostgreSQL
 
 <br>
 
@@ -33,4 +38,4 @@
 - ValidateLocation
 - NPC
 - Items
-- Base actions (SocialAction etc)
+- Base actions
