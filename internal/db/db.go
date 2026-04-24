@@ -91,6 +91,7 @@ type CharData struct {
 	Class     int32
 	Sex       int32
 	Level     int32
+	X, Y, Z   int32 // Добавляем координаты
 }
 
 func CreateCharacter(login, name string, race, classId, sex uint32) error {
@@ -118,8 +119,9 @@ func CreateCharacter(login, name string, race, classId, sex uint32) error {
 
 func GetCharacters(login string) ([]CharData, error) {
 	ctx := context.Background()
+	// Добавляем x, y, z в SELECT
 	rows, err := Pool.Query(ctx, `
-		SELECT char_name, object_id, race_id, class_id, sex, level 
+		SELECT char_name, object_id, race_id, class_id, sex, level, x, y, z 
 		FROM characters 
 		WHERE account_name = $1
 	`, login)
@@ -131,7 +133,8 @@ func GetCharacters(login string) ([]CharData, error) {
 	var chars []CharData
 	for rows.Next() {
 		var c CharData
-		err := rows.Scan(&c.Name, &c.ObjectID, &c.Race, &c.Class, &c.Sex, &c.Level)
+		// Добавляем сканирование x, y, z
+		err := rows.Scan(&c.Name, &c.ObjectID, &c.Race, &c.Class, &c.Sex, &c.Level, &c.X, &c.Y, &c.Z)
 		if err != nil {
 			log.Printf("Scan error: %v", err)
 			continue
@@ -154,4 +157,14 @@ func GetCharacterByName(name string) (*CharData, error) {
 		return nil, err
 	}
 	return &c, nil
+}
+
+func UpdateCharacterLocation(objID int32, x, y, z int32) error {
+	ctx := context.Background()
+	_, err := Pool.Exec(ctx, `
+		UPDATE characters 
+		SET x = $1, y = $2, z = $3 
+		WHERE object_id = $4
+	`, x, y, z, objID)
+	return err
 }

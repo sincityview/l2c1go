@@ -18,7 +18,6 @@ func encodeUTF16(s string) []byte {
 	return res
 }
 
-// 0x1F - CharacterSelectionInfo
 func PackCharSelectionInfo(login string, chars []db.CharData) []byte {
 	buf := new(bytes.Buffer)
 	buf.WriteByte(0x1F)
@@ -34,18 +33,18 @@ func PackCharSelectionInfo(login string, chars []db.CharData) []byte {
 		buf.Write(encodeUTF16(char.Name))
 		binary.Write(buf, binary.LittleEndian, uint32(char.ObjectID))
 		buf.Write(encodeUTF16(login))
-		binary.Write(buf, binary.LittleEndian, uint32(0x55555555)) // SessionID
-		binary.Write(buf, binary.LittleEndian, uint32(0))          // ClanID
-		binary.Write(buf, binary.LittleEndian, uint32(0))          // Static
+		binary.Write(buf, binary.LittleEndian, uint32(0x55555555))
+		binary.Write(buf, binary.LittleEndian, uint32(0)) // ClanID
+		binary.Write(buf, binary.LittleEndian, uint32(0))
 
 		binary.Write(buf, binary.LittleEndian, uint32(char.Sex))
 		binary.Write(buf, binary.LittleEndian, uint32(char.Race))
 		binary.Write(buf, binary.LittleEndian, uint32(char.Class))
 		binary.Write(buf, binary.LittleEndian, uint32(1)) // Active
 
-		binary.Write(buf, binary.LittleEndian, int32(-70880)) // X
-		binary.Write(buf, binary.LittleEndian, int32(257360)) // Y
-		binary.Write(buf, binary.LittleEndian, int32(-3080))  // Z
+		binary.Write(buf, binary.LittleEndian, int32(char.X))
+		binary.Write(buf, binary.LittleEndian, int32(char.Y))
+		binary.Write(buf, binary.LittleEndian, int32(char.Z))
 
 		binary.Write(buf, binary.LittleEndian, float64(100.0)) // HP
 		binary.Write(buf, binary.LittleEndian, float64(50.0))  // MP
@@ -68,79 +67,70 @@ func PackCharSelectionInfo(login string, chars []db.CharData) []byte {
 	return buf.Bytes()
 }
 
-// 0x15 - CharacterSelected (CharSelected)
+
+
+// 0x21 - CharacterSelected (из JS-проекта)
 func PackCharSelected(char *db.CharData) []byte {
 	buf := new(bytes.Buffer)
-	buf.WriteByte(0x15) // По твоему описанию тип 0x15
+	buf.WriteByte(0x21)
 
 	buf.Write(encodeUTF16(char.Name))
 	binary.Write(buf, binary.LittleEndian, uint32(char.ObjectID))
 	buf.Write(encodeUTF16("Title"))
-	binary.Write(buf, binary.LittleEndian, uint32(0x55555555)) // Session ID
-	binary.Write(buf, binary.LittleEndian, uint32(0))          // Clan ID
-	binary.Write(buf, binary.LittleEndian, uint32(0))          // Static 0
-
+	binary.Write(buf, binary.LittleEndian, uint32(0x55555555))
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // ClanId
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // Static 0
 	binary.Write(buf, binary.LittleEndian, uint32(char.Sex))
 	binary.Write(buf, binary.LittleEndian, uint32(char.Race))
 	binary.Write(buf, binary.LittleEndian, uint32(char.Class))
 	binary.Write(buf, binary.LittleEndian, uint32(1)) // Active
 
-	binary.Write(buf, binary.LittleEndian, int32(-70880)) // X
-	binary.Write(buf, binary.LittleEndian, int32(257360)) // Y
-	binary.Write(buf, binary.LittleEndian, int32(-3080))  // Z
+	binary.Write(buf, binary.LittleEndian, int32(char.X))
+	binary.Write(buf, binary.LittleEndian, int32(char.Y))
+	binary.Write(buf, binary.LittleEndian, int32(char.Z))
 
-	binary.Write(buf, binary.LittleEndian, float64(100.0)) // HP (Double)
-	binary.Write(buf, binary.LittleEndian, float64(50.0))  // MP (Double)
+	binary.Write(buf, binary.LittleEndian, float64(100.0)) // HP (Float)
+	binary.Write(buf, binary.LittleEndian, float64(50.0))  // MP (Float)
 
-	binary.Write(buf, binary.LittleEndian, uint32(0))           // SP
-	binary.Write(buf, binary.LittleEndian, uint32(0))           // EXP
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // SP
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // EXP
 	binary.Write(buf, binary.LittleEndian, uint32(char.Level))
-	binary.Write(buf, binary.LittleEndian, uint32(0))           // Karma
-	binary.Write(buf, binary.LittleEndian, uint32(0))           // Static 0
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // Unknown/Karma
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // Unknown
 
-	// Характеристики: STR, DEX, CON, INT, WIT, MEN
-	binary.Write(buf, binary.LittleEndian, uint32(40))
-	binary.Write(buf, binary.LittleEndian, uint32(30))
-	binary.Write(buf, binary.LittleEndian, uint32(43))
-	binary.Write(buf, binary.LittleEndian, uint32(21))
-	binary.Write(buf, binary.LittleEndian, uint32(11))
-	binary.Write(buf, binary.LittleEndian, uint32(25))
+	// Порядок статов из JS: INT, STR, CON, MEN, DEX, WIT
+	binary.Write(buf, binary.LittleEndian, uint32(21)) // INT
+	binary.Write(buf, binary.LittleEndian, uint32(40)) // STR
+	binary.Write(buf, binary.LittleEndian, uint32(43)) // CON
+	binary.Write(buf, binary.LittleEndian, uint32(25)) // MEN
+	binary.Write(buf, binary.LittleEndian, uint32(30)) // DEX
+	binary.Write(buf, binary.LittleEndian, uint32(11)) // WIT
 
-	// "Муть" из описания (заполнение нулями)
-	for i := 0; i < 32; i++ {
+	for i := 0; i < 30; i++ {
 		binary.Write(buf, binary.LittleEndian, uint32(0))
 	}
-
-	binary.Write(buf, binary.LittleEndian, uint16(1600)) // in-game time
-	binary.Write(buf, binary.LittleEndian, uint32(0))
-	binary.Write(buf, binary.LittleEndian, uint32(0)) // Неизвестно
-
-	for i := 0; i < 4; i++ {
-		binary.Write(buf, binary.LittleEndian, uint32(0))
-	}
-
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // in-game time
 	return buf.Bytes()
 }
 
-// 0x04 - UserInfo
+// 0x04 - UserInfo (Критическая структура для входа)
 func PackUserInfo(char *db.CharData) []byte {
 	buf := new(bytes.Buffer)
 	buf.WriteByte(0x04)
 
-	binary.Write(buf, binary.LittleEndian, int32(-70880)) // X
-	binary.Write(buf, binary.LittleEndian, int32(257360)) // Y
-	binary.Write(buf, binary.LittleEndian, int32(-3080))  // Z
-	binary.Write(buf, binary.LittleEndian, uint32(0))     // Heading
-
+	binary.Write(buf, binary.LittleEndian, int32(char.X))
+	binary.Write(buf, binary.LittleEndian, int32(char.Y))
+	binary.Write(buf, binary.LittleEndian, int32(char.Z))
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // heading
 	binary.Write(buf, binary.LittleEndian, uint32(char.ObjectID))
 	buf.Write(encodeUTF16(char.Name))
-
 	binary.Write(buf, binary.LittleEndian, uint32(char.Race))
 	binary.Write(buf, binary.LittleEndian, uint32(char.Sex))
 	binary.Write(buf, binary.LittleEndian, uint32(char.Class))
-
 	binary.Write(buf, binary.LittleEndian, uint32(char.Level))
-	binary.Write(buf, binary.LittleEndian, uint32(0))  // EXP
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // exp
+
+	// Статы в UserInfo: STR, DEX, CON, INT, WIT, MEN
 	binary.Write(buf, binary.LittleEndian, uint32(40)) // STR
 	binary.Write(buf, binary.LittleEndian, uint32(30)) // DEX
 	binary.Write(buf, binary.LittleEndian, uint32(43)) // CON
@@ -148,50 +138,71 @@ func PackUserInfo(char *db.CharData) []byte {
 	binary.Write(buf, binary.LittleEndian, uint32(11)) // WIT
 	binary.Write(buf, binary.LittleEndian, uint32(25)) // MEN
 
-	binary.Write(buf, binary.LittleEndian, uint32(0))     // SP
-	binary.Write(buf, binary.LittleEndian, uint32(0))     // Cur Load
-	binary.Write(buf, binary.LittleEndian, uint32(10000)) // Max Load
-	binary.Write(buf, binary.LittleEndian, uint32(20))    // Unknown C1
+	// HP/MP — тут writeD (uint32) по JS-проекту!
+	binary.Write(buf, binary.LittleEndian, uint32(100)) // Max HP
+	binary.Write(buf, binary.LittleEndian, uint32(100)) // Cur HP
+	binary.Write(buf, binary.LittleEndian, uint32(50))  // Max MP
+	binary.Write(buf, binary.LittleEndian, uint32(50))  // Cur MP
 
-	for i := 0; i < 15; i++ { binary.Write(buf, binary.LittleEndian, uint32(0)) } // Paperdoll IDs
-	for i := 0; i < 15; i++ { binary.Write(buf, binary.LittleEndian, uint32(0)) } // Paperdoll ObjIDs
+	binary.Write(buf, binary.LittleEndian, uint32(0))     // sp
+	binary.Write(buf, binary.LittleEndian, uint32(100))   // cur load
+	binary.Write(buf, binary.LittleEndian, uint32(1000))  // max load
+	binary.Write(buf, binary.LittleEndian, uint32(0x28))  // unknown static
 
-	binary.Write(buf, binary.LittleEndian, uint32(4))   // P.Atk
-	binary.Write(buf, binary.LittleEndian, uint32(300)) // Atk.Spd
-	binary.Write(buf, binary.LittleEndian, uint32(70))  // P.Def
-	binary.Write(buf, binary.LittleEndian, uint32(0))   // Evasion
-	binary.Write(buf, binary.LittleEndian, uint32(0))   // Accuracy
-	binary.Write(buf, binary.LittleEndian, uint32(40))  // Critical
-	binary.Write(buf, binary.LittleEndian, uint32(3))   // M.Atk
-	binary.Write(buf, binary.LittleEndian, uint32(200)) // Cast.Spd
+	// Paperdoll (2 блока по 15 слотов: ObjectId и ItemId) = 30 * writeD
+	for i := 0; i < 30; i++ {
+		binary.Write(buf, binary.LittleEndian, uint32(0))
+	}
 
-	binary.Write(buf, binary.LittleEndian, uint32(115)) // Speed
-	binary.Write(buf, binary.LittleEndian, uint32(115)) // RunSpeed
-	binary.Write(buf, binary.LittleEndian, uint32(50))  // WalkSpeed
-	binary.Write(buf, binary.LittleEndian, uint32(115)) // SwimRun
-	binary.Write(buf, binary.LittleEndian, uint32(50))  // SwimWalk
+	binary.Write(buf, binary.LittleEndian, uint32(4))   // pAtk
+	binary.Write(buf, binary.LittleEndian, uint32(300)) // attackSpeed
+	binary.Write(buf, binary.LittleEndian, uint32(70))  // pDef
+	binary.Write(buf, binary.LittleEndian, uint32(0))   // evasion
+	binary.Write(buf, binary.LittleEndian, uint32(0))   // accuracy
+	binary.Write(buf, binary.LittleEndian, uint32(40))  // critical
+	binary.Write(buf, binary.LittleEndian, uint32(3))   // mAtk
+	binary.Write(buf, binary.LittleEndian, uint32(200)) // mSpd
+	binary.Write(buf, binary.LittleEndian, uint32(300)) // pSpd (дубль?)
+	binary.Write(buf, binary.LittleEndian, uint32(70))  // mDef
+	binary.Write(buf, binary.LittleEndian, uint32(0))   // purple
+	binary.Write(buf, binary.LittleEndian, uint32(0))   // karma
 
-	binary.Write(buf, binary.LittleEndian, float64(1.0)) // Move Mult
-	binary.Write(buf, binary.LittleEndian, float64(1.0)) // Atk Mult
+	// Скорости (8 штук writeD)
+	for i := 0; i < 8; i++ {
+		binary.Write(buf, binary.LittleEndian, uint32(115))
+	}
 
-	binary.Write(buf, binary.LittleEndian, float64(8.0))  // Radius
-	binary.Write(buf, binary.LittleEndian, float64(24.0)) // Height
+	binary.Write(buf, binary.LittleEndian, float64(1.0)) // movementMultiplier
+	binary.Write(buf, binary.LittleEndian, float64(1.0)) // attackSpeedMultiplier
+	binary.Write(buf, binary.LittleEndian, float64(8.0)) // collisionRadius
+	binary.Write(buf, binary.LittleEndian, float64(24.0)) // collisionHeight
 
-	binary.Write(buf, binary.LittleEndian, uint32(0)) // Hair Style
-	binary.Write(buf, binary.LittleEndian, uint32(0)) // Hair Color
-	binary.Write(buf, binary.LittleEndian, uint32(0)) // Face
-	binary.Write(buf, binary.LittleEndian, uint32(0)) // IsGM
-
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // hairStyle
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // hairColor
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // face
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // isGM
 	buf.Write(encodeUTF16("Title"))
-	binary.Write(buf, binary.LittleEndian, uint32(0)) // ClanID
-	binary.Write(buf, binary.LittleEndian, uint32(0)) // AllyID
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // clanId
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // crestId
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // allyId
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // allyCrestId
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // siege-flags
+	buf.WriteByte(0x00) // byte
+	buf.WriteByte(0x00) // storeType
+	buf.WriteByte(0x00) // canCraft
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // pk
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // pvp
+	binary.Write(buf, binary.LittleEndian, uint16(0)) // cubic count
+	buf.WriteByte(0x00) // find party
 
 	return buf.Bytes()
 }
 
-// 0xF8 - SSQInfo (SignsSky)
-func PackSSQInfo() []byte {
-	return []byte{0xF8, 0x01, 0x01} // Dusk победил
+func PackItemList() []byte {
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0x1B)
+	binary.Write(buf, binary.LittleEndian, uint16(0))
+	return buf.Bytes()
 }
 
 func PackQuestList() []byte {
@@ -200,4 +211,39 @@ func PackQuestList() []byte {
 
 func PackSkillList() []byte {
 	return []byte{0x58, 0x00, 0x00, 0x00, 0x00}
+}
+
+func PackSSQInfo() []byte {
+	return []byte{0xF8, 0x01, 0x01}
+}
+
+func PackCharMoveToLocation(objID int32, targetX, targetY, targetZ int32, curX, curY, curZ int32) []byte {
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0x01) // Opcode MoveToLocation
+	binary.Write(buf, binary.LittleEndian, objID)
+	binary.Write(buf, binary.LittleEndian, targetX)
+	binary.Write(buf, binary.LittleEndian, targetY)
+	binary.Write(buf, binary.LittleEndian, targetZ)
+	binary.Write(buf, binary.LittleEndian, curX)
+	binary.Write(buf, binary.LittleEndian, curY)
+	binary.Write(buf, binary.LittleEndian, curZ)
+	return buf.Bytes()
+}
+
+func PackSay2(objID int32, chatType uint32, charName string, text string) []byte {
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0x5D) // Наш новый опкод
+	binary.Write(buf, binary.LittleEndian, objID)
+	binary.Write(buf, binary.LittleEndian, chatType)
+	buf.Write(encodeUTF16(charName))
+	buf.Write(encodeUTF16(text))
+	return buf.Bytes()
+}
+
+func PackSystemMessage(msgID uint32) []byte {
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0x7A)
+	binary.Write(buf, binary.LittleEndian, msgID)
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // Количество параметров (в С1 это важно)
+	return buf.Bytes()
 }
