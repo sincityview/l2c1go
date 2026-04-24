@@ -1,6 +1,7 @@
 ### Lineage II Dark Ages
 
 ------
+
 #### Текущий прогресс:
 - LoginServer: 
   - Полная авторизация, шифрование Blowfish
@@ -19,21 +20,15 @@
   - MariaDB
   - Структура Mobius HoW 
 
-<br>
-
 #### Технологии:
 - Go 1.21+
 - MariaDB
 - Клиент Lineage 2 Chronicle 1: Harbingers of War
 
-<br>
-
 #### Запуск:
 1. Поднять MariaDB (docker compose up)
 2. Запустить `go run cmd/loginserver/main.go`.
 3. Запустить `go run cmd/gameserver/main.go`.
-
-<br>
 
 #### TODO:
 - NPC
