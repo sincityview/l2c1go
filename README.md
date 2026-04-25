@@ -26,6 +26,23 @@
 
 #### Запуск:
 1. Поднять MariaDB (docker compose up)
+
+import darkages.sql
+
+accounts:
+```sql
+INSERT INTO accounts (login, password) 
+VALUES ('admin', SHA2('admin', 256));
+```
+
+bbs:
+receiver_id = 0 (all), charId (character)
+sender_id = 0 (admin), charId (character)
+```sql
+INSERT INTO bbs (receiver_id, sender_id, subject, message)
+VALUES ('0', '0', 'Subject', 'Message');
+```
+
 2. Запустить `go run cmd/loginserver/main.go`.
 3. Запустить `go run cmd/gameserver/main.go`.
 
