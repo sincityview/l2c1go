@@ -185,33 +185,47 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 			// Отвечаем, что создавать можно (0x23 в С1)
 			s.sendEncryptedPacket(conn, crypt, []byte{0x23, 0x00, 0x00, 0x00, 0x00})
 
-		case 0x0B: // RequestCharacterCreate (Нажата кнопка "OK" в создании)
+		case 0x0B: // RequestCharacterCreate
 			charName := parseL2String(data[1:])
+			offset := 1 + len(encodeUTF16(charName))
 			
-			// Смещение: ищем параметры после имени
-			nameBytes := encodeUTF16(charName)
-			offset := 1 + len(nameBytes)
+			race := binary.LittleEndian.Uint32(data[offset : offset+4])
+			sex := binary.LittleEndian.Uint32(data[offset+4 : offset+8])
+			classId := binary.LittleEndian.Uint32(data[offset+8 : offset+12])
+
+			log.Printf("GS: Создание персонажа [%s], Race: %d, Class: %d", charName, race, classId)
+
+			// Временно используем фиксированные координаты начальной деревни людей
+			// Позже мы вынесем это в простую таблицу в БД
+			var startX int32 = -70880
+			var startY int32 = 257360
+			var startZ int32 = -3080
+
+			// Пустой список предметов (пока не настроим выдачу через БД)
+			startItems := []string{}
+
+			// ВЫЗОВ С 9 АРГУМЕНТАМИ
+			err := db.CreateCharacter(
+				accountLogin, 
+				charName, 
+				race, 
+				classId, 
+				sex, 
+				startX, 
+				startY, 
+				startZ, 
+				startItems,
+			)
 			
-			if len(data) >= offset+12 {
-				race := binary.LittleEndian.Uint32(data[offset : offset+4])
-				sex := binary.LittleEndian.Uint32(data[offset+4 : offset+8])
-				classId := binary.LittleEndian.Uint32(data[offset+8 : offset+12])
-
-				log.Printf("GS: Создание чара [%s] Race:%d Sex:%d Class:%d", charName, race, sex, classId)
-
-				err := db.CreateCharacter(accountLogin, charName, race, classId, sex)
-				if err != nil {
-					log.Printf("GS: DB Error: %v", err)
-					s.sendEncryptedPacket(conn, crypt, []byte{0x25, 0x00, 0x00, 0x00, 0x00}) // Fail
-				} else {
-					log.Printf("GS: Персонаж [%s] успешно создан", charName)
-					s.sendEncryptedPacket(conn, crypt, []byte{0x25, 0x01, 0x00, 0x00, 0x00}) // Success
-					
-					// Обновляем список персонажей для клиента
-					chars, _ := db.GetCharacters(accountLogin)
-					s.sendEncryptedPacket(conn, crypt, PackCharSelectionInfo(accountLogin, chars))
-				}
+			if err != nil {
+				log.Printf("GS: Ошибка создания в БД: %v", err)
+				s.sendEncryptedPacket(conn, crypt, []byte{0x26, 0x00, 0x00, 0x00, 0x00})
+			} else {
+				s.sendEncryptedPacket(conn, crypt, []byte{0x25, 0x01, 0x00, 0x00, 0x00})
+				chars, _ := db.GetCharacters(accountLogin)
+				s.sendEncryptedPacket(conn, crypt, PackCharSelectionInfo(accountLogin, chars))
 			}
+
 
 		case 0x04: // Action (клик по объекту)
 			targetID := int32(binary.LittleEndian.Uint32(data[1:5]))
@@ -231,11 +245,38 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 			// В будущем этот пакет должны получать все игроки вокруг, чтобы видеть твою анимацию
 			s.sendEncryptedPacket(conn, crypt, PackSocialAction(char.ObjectID, actionID))
 
-		case 0x37: // RequestTargetCancel
+		case 0x37: // RequestTargetCancel (Нажат Esc)
 			if char == nil { break }
-			log.Printf("GS: [%s] снял выделение цели", char.Name)
 			s.sendEncryptedPacket(conn, crypt, PackTargetUnselected(char))
 
+		case 0x14: // RequestUseItem (Двойной клик по карте в инвентаре)
+			// Опкод 0x14 - использование. Для теста просто открываем карту 1665
+			s.sendEncryptedPacket(conn, crypt, PackShowMiniMap(1665))
+
+		case 0x57: // RequestShowBoard
+			if char == nil { break }
+			
+			messages, err := db.GetBBSMessages(char.ObjectID)
+			if err != nil {
+				log.Printf("GS: Ошибка получения BBS: %v", err)
+				// Можно отправить пустое окно или системное сообщение
+				break
+			}
+			
+			// Формируем контент
+			content := "<br><center><font color=\"LEVEL\">Bulletin Board</font></center><br>"
+			for _, m := range messages {
+				content += fmt.Sprintf("<font color=\"666666\">От: %s</font><br>"+
+					"<font color=\"DDDDDD\">Тема: %s</font><br>"+
+					"%s<br><br><img src=\"L2UI.SquareGray\" width=280 height=1><br>", 
+					m.SenderName, m.Subject, m.Message)
+			}
+
+			if len(messages) == 0 {
+				content += "<center>Сообщений пока нет.</center>"
+			}
+
+			s.sendEncryptedPacket(conn, crypt, PackShowBoard("<html><body>" + content + "</body></html>"))
 
 		default:
 			log.Printf("GS: Unknown Packet 0x%02X | Data: %s", packetID, hexDump(data))
@@ -336,4 +377,24 @@ func getPaperdollArrays(charID int32) ([15]int32, [15]int32) {
 		}
 	}
 	return objIDs, itemIDs
+}
+
+func getClassKey(race, classId uint32) string {
+	switch race {
+	case 0: // Human
+		if classId == 0 { return "humanFighter" }
+		return "humanMagician"
+	case 1: // Elf
+		if classId == 18 { return "elfFighter" }
+		return "elfMagician"
+	case 2: // Dark Elf
+		if classId == 31 { return "darkelfFighter" }
+		return "darkelfMagician"
+	case 3: // Orc
+		if classId == 44 { return "orcFighter" }
+		return "orcShaman"
+	case 4: // Dwarf
+		return "dwarfApprentice"
+	}
+	return "humanFighter"
 }

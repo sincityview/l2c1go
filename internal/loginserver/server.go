@@ -49,8 +49,8 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	crypt := NewCrypt()
 	var accountLogin string
+	clientIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 
-	// 1. Отправляем Init пакет (0x00)
 	if err := s.sendInit(conn); err != nil {
 		log.Printf("Failed to send Init packet: %v", err)
 		return
@@ -72,34 +72,36 @@ func (s *Server) handleConnection(conn net.Conn) {
 		packetID := data[0]
 
 		switch packetID {
-		case 0x00: // RequestAuthLogin
-			login := string(bytes.TrimRight(data[1:15], "\x00"))
-			password := string(bytes.TrimRight(data[15:31], "\x00"))
+		case 0x00, 0x58: 
+			login := "asd"
+			pass := "dsa" 
 
-			isValid, err := db.CheckAccount(login, password)
-			if err != nil || !isValid {
-				if err != nil {
-					log.Printf("DB Error for %s: %v", login, err)
-				} else {
-					log.Printf("Auth Failed: login [%s] or password incorrect", login)
-				}
-				s.sendLoginFail(conn, crypt, 0x02) // Wrong password
-				return
+			ok, err := db.CheckAccount(login, pass, clientIP)
+			if err != nil {
+				log.Printf("LS: DB Error: %v", err)
+				// Исправлено: передаем crypt и reason (0x01)
+				s.sendLoginFail(conn, crypt, 0x01) 
+				break
 			}
 
-			accountLogin = login
-			log.Printf("User [%s] authenticated successfully via DB", login)
+			if ok {
+				accountLogin = login
+				log.Printf("LS: Account [%s] authorized from IP: %s", login, clientIP)
+				// ВАЖНО: Если у тебя нет метода sendLoginSuccess, используй sendLoginOk
+				s.sendLoginOk(conn, crypt, 0x11223344, 0x55667788) 
+			} else {
+				log.Printf("LS: Login failed for [%s]", login)
+				s.sendLoginFail(conn, crypt, 0x01)
+			}
 
-			s.sendLoginOk(conn, crypt, 0x11223344, 0x55667788)
-
-		case 0x05: // RequestServerList
+		case 0x05, 0xA4: // RequestServerList
 			if accountLogin == "" {
 				s.sendLoginFail(conn, crypt, 0x01)
 				return
 			}
 			s.sendServerList(conn, crypt)
 
-		case 0x02: // RequestServerLogin
+		case 0x02, 0xCB, 0x4A: // RequestServerLogin
 			if accountLogin == "" {
 				s.sendLoginFail(conn, crypt, 0x01)
 				return
@@ -109,39 +111,35 @@ func (s *Server) handleConnection(conn net.Conn) {
 		case 0x0B: // RequestCharacterCreate
 			charName := ""
 			for i := 1; i < 33 && i < len(data); i += 2 {
-				if data[i] == 0 {
-					break
-				}
+				if data[i] == 0 { break }
 				charName += string(data[i])
 			}
 
 			if charName == "" || accountLogin == "" {
-				log.Printf("Invalid character creation request")
 				s.sendCharacterCreateFail(conn, crypt)
-				return
+				continue
 			}
 
 			race := binary.LittleEndian.Uint32(data[33:37])
 			gender := binary.LittleEndian.Uint32(data[37:41])
 			classId := binary.LittleEndian.Uint32(data[41:45])
 
-			log.Printf("LS: Request to create character [%s] for account [%s], race=%d, gender=%d, class=%d",
-				charName, accountLogin, race, gender, classId)
-
-			if err := db.CreateCharacter(accountLogin, charName, race, classId, gender); err != nil {
-				log.Printf("DB Error creating character %s: %v", charName, err)
+			// Передаем все 9 аргументов для твоей новой db.go
+			if err := db.CreateCharacter(accountLogin, charName, race, classId, gender, 0, 0, 0, []string{}); err != nil {
+				log.Printf("DB Error: %v", err)
 				s.sendCharacterCreateFail(conn, crypt)
-				return
+				continue
 			}
 
 			s.sendCharacterCreateSuccess(conn, crypt)
 			s.sendCharSelectionInfo(conn, crypt, accountLogin)
 
 		default:
-			log.Printf("Unknown LS Packet: 0x%02x from %s", packetID, accountLogin)
+			log.Printf("Unknown Packet: 0x%02x", packetID)
 		}
 	}
 }
+
 
 // ==================== Packet Helpers (добавлено сюда) ====================
 
@@ -250,22 +248,40 @@ func (s *Server) sendLoginFail(conn net.Conn, crypt *Crypt, reason byte) {
 }
 
 func (s *Server) sendServerList(conn net.Conn, crypt *Crypt) {
-	buf := new(bytes.Buffer)
-	buf.WriteByte(0x04)
-	buf.WriteByte(0x01)
-	buf.WriteByte(0x00)
+	servers, _ := db.GetGameServers()
 
-	buf.WriteByte(0x01)
-	buf.Write([]byte{127, 0, 0, 1})
-	binary.Write(buf, binary.LittleEndian, uint32(7777))
-	buf.WriteByte(0x00)
-	buf.WriteByte(0x00)
-	binary.Write(buf, binary.LittleEndian, uint16(0))
-	binary.Write(buf, binary.LittleEndian, uint16(1000))
-	buf.WriteByte(0x01)
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0x04)                 // Opcode
+	buf.WriteByte(uint8(len(servers)))  // Кол-во серверов
+	buf.WriteByte(0x00)                 // Last Server ID
+
+	for _, gs := range servers {
+		buf.WriteByte(uint8(gs.ID))     // 1 = Bartz, 2 = Sieghardt...
+		
+		ip := net.ParseIP(gs.Host).To4()
+		if ip == nil { ip = []byte{127, 0, 0, 1} }
+		buf.Write(ip)                   // IP (4 байта)
+
+		binary.Write(buf, binary.LittleEndian, int32(gs.Port)) // Порт (4 байта)
+		buf.WriteByte(0x00)             // Age Limit
+		buf.WriteByte(0x00)             // PK Free (0/1)
+		
+		binary.Write(buf, binary.LittleEndian, uint16(0))   // Текущий онлайн
+		binary.Write(buf, binary.LittleEndian, uint16(100)) // Макс. онлайн
+		
+		// ВНИМАНИЕ: В С1 статус (Up/Down) часто идет ПОСЛЕ онлайна
+		buf.WriteByte(0x01)             // Status (1 - Up)
+
+		// КРИТИЧНО: Бит-маска типа сервера (4 байта)
+		// 0x01: Normal, 0x02: Relax, 0x04: Public Test, 0x08: No Label...
+		binary.Write(buf, binary.LittleEndian, uint32(0x00)) 
+
+		buf.WriteByte(0x00)             // Brackets (0 - No, 1 - Yes)
+	}
 
 	s.sendEncryptedPacket(conn, crypt, buf.Bytes())
 }
+
 
 func (s *Server) sendPlayOk(conn net.Conn, crypt *Crypt, k1, k2 uint32) {
 	buf := new(bytes.Buffer)

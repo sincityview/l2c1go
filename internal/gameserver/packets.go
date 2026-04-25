@@ -265,25 +265,6 @@ func PackSocialAction(objID int32, actionID uint32) []byte {
 	return buf.Bytes()
 }
 
-// 0x86 - ShowBoard (Community Board)
-func PackShowBoard(html string) []byte {
-	buf := new(bytes.Buffer)
-	buf.WriteByte(0x86)
-	for i := 0; i < 6; i++ {
-		buf.Write(encodeUTF16("")) // Пустые строки top/left и т.д.
-	}
-	buf.Write(encodeUTF16(html)) // Основной контент
-	return buf.Bytes()
-}
-
-// 0xB6 - ShowMiniMap (Миникарта)
-func PackShowMiniMap(mapID uint32) []byte {
-	buf := new(bytes.Buffer)
-	buf.WriteByte(0xB6)
-	binary.Write(buf, binary.LittleEndian, mapID)
-	return buf.Bytes()
-}
-
 // 0xBD - ShowRadar (Стрелка на радаре)
 func PackShowRadar(x, y, z int32) []byte {
 	buf := new(bytes.Buffer)
@@ -303,7 +284,7 @@ func PackMyTargetSelected(objID int32) []byte {
 	return buf.Bytes()
 }
 
-// 0x3A - TargetUnselected
+// 0x3A - TargetUnselected (Отмена таргета)
 func PackTargetUnselected(char *db.CharData) []byte {
 	buf := new(bytes.Buffer)
 	buf.WriteByte(0x3A)
@@ -311,6 +292,24 @@ func PackTargetUnselected(char *db.CharData) []byte {
 	binary.Write(buf, binary.LittleEndian, int32(char.X))
 	binary.Write(buf, binary.LittleEndian, int32(char.Y))
 	binary.Write(buf, binary.LittleEndian, int32(char.Z))
-	binary.Write(buf, binary.LittleEndian, uint32(0)) // Static
+	binary.Write(buf, binary.LittleEndian, uint32(0)) 
 	return buf.Bytes()
 }
+
+// 0xB6 - ShowMiniMap (Карта)
+func PackShowMiniMap(mapID int32) []byte {
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0xB6)
+	binary.Write(buf, binary.LittleEndian, mapID)
+	return buf.Bytes()
+}
+
+// 0x86 - ShowBoard (Alt+B)
+func PackShowBoard(html string) []byte {
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0x86)
+	for i := 0; i < 6; i++ { buf.Write(encodeUTF16("")) }
+	buf.Write(encodeUTF16(html))
+	return buf.Bytes()
+}
+

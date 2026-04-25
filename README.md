@@ -4,26 +4,25 @@
 
 #### Текущий прогресс:
 - LoginServer: 
-  - Полная авторизация, шифрование Blowfish
+  - Полная авторизация
+  - Шифрование Blowfish
   - Выбор сервера
 
 - GameServer: 
   - Протоколы 411/414/419
-  - Реализован Handshake и XOR-шифрование
-  - Вход в мир, создание персонажа, выбор персонажа
+  - Handshake и XOR-шифрование
+  - Вход в лобби, создание персонажа, выбор персонажа
+  - Загрузка мира
   - Движение с сохранением координат в БД
   - Чат и системные сообщения
-  - Корректный Logout и Restart
   - Действия, выбор цели, радар, карта, инвентарь
+  - Logout и Restart
 
 - Database: 
   - MariaDB
-  - Структура Mobius HoW 
 
-#### Технологии:
-- Go 1.21+
-- MariaDB
-- Клиент Lineage 2 Chronicle 1: Harbingers of War
+- Client:
+  - Lineage 2 Chronicle 1: Harbingers of War
 
 #### Запуск:
 1. Поднять MariaDB (docker compose up)
@@ -31,4 +30,6 @@
 3. Запустить `go run cmd/gameserver/main.go`.
 
 #### TODO:
+- Inventory items, eqip items
 - NPC
+- Monsters
