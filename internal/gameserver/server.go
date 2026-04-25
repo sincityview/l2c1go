@@ -83,35 +83,34 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 			chars, _ := db.GetCharacters(accountLogin)
 			s.sendEncryptedPacket(conn, crypt, PackCharSelectionInfo(accountLogin, chars))
 
-		case 0x0D: // Character Selected
-			chars, _ := db.GetCharacters(accountLogin)
-			if len(chars) > 0 {
-				char = &chars[0]
-				
-				// 1. Собираем инвентарь
-				inventory, _ := db.GetInventory(char.ObjectID)
-				
-				// 2. Распределяем по слотам для UserInfo
-				var paperdollObj [15]int32
-				var paperdollItem [15]int32
-				for _, it := range inventory {
-					if it.Loc == "PAPERDOLL" && it.LocData >= 0 && it.LocData < 15 {
-						paperdollObj[it.LocData] = it.ObjectID
-						paperdollItem[it.LocData] = it.ItemID
-					}
-				}
-
-				s.sendEncryptedPacket(conn, crypt, PackSSQInfo())
-				s.sendEncryptedPacket(conn, crypt, PackCharSelected(char))
-				s.sendEncryptedPacket(conn, crypt, PackQuestList())
-				s.sendEncryptedPacket(conn, crypt, PackSkillList())
-
-				time.Sleep(200 * time.Millisecond)
-				
-				// 3. Шлем UserInfo с вещами и ItemList
-				s.sendEncryptedPacket(conn, crypt, PackUserInfo(char, paperdollObj, paperdollItem))
-				s.sendEncryptedPacket(conn, crypt, PackItemList(inventory))
+		case 0x0D: // CharacterSelected
+			// Читаем индекс выбранного персонажа (0 - первый, 1 - второй и т.д.)
+			charIndex := binary.LittleEndian.Uint32(data[1:5])
+			
+			// Получаем всех персонажей аккаунта
+			chars, err := db.GetCharacters(accountLogin)
+			if err != nil || int(charIndex) >= len(chars) {
+				log.Printf("GS: Ошибка выбора персонажа индекса %d", charIndex)
+				break
 			}
+
+			// ТЕПЕРЬ МЫ БЕРЕМ ТОГО, КОГО ТЫ ВЫБРАЛ
+			char = &chars[charIndex]
+			log.Printf("GS: [%s] выбрал персонажа %s (Index: %d)", accountLogin, char.Name, charIndex)
+
+			// Дальше стандартная логика входа...
+			inventory, _ := db.GetInventory(char.ObjectID)
+			pObj, pItem := getPaperdollArrays(char.ObjectID)
+
+			s.sendEncryptedPacket(conn, crypt, PackSSQInfo())
+			s.sendEncryptedPacket(conn, crypt, PackCharSelected(char))
+			s.sendEncryptedPacket(conn, crypt, PackQuestList())
+			s.sendEncryptedPacket(conn, crypt, PackSkillList())
+			
+			time.Sleep(100 * time.Millisecond)
+			s.sendEncryptedPacket(conn, crypt, PackUserInfo(char, pObj, pItem))
+			s.sendEncryptedPacket(conn, crypt, PackItemList(inventory))
+
 
 		case 0x0F: // RequestItemList от клиента
 			if char == nil { break }
@@ -172,13 +171,23 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 			s.sendEncryptedPacket(conn, crypt, PackQuestList())
 
 		case 0x03: // RequestEnterWorld
-			// Попробуем отправить ID 34 (Welcome). 
-			// Если снова кританет, значит в твоем протоколе 0x7A имеет другую длину.
-			s.sendEncryptedPacket(conn, crypt, PackSystemMessage(34))
+			if char != nil {
+				inventory, _ := db.GetInventory(char.ObjectID)
+				s.sendEncryptedPacket(conn, crypt, PackItemList(inventory))
+				log.Printf("GS: [%s] вошел в мир, отправлено предметов: %d", char.Name, len(inventory))
+			}
 
-		case 0x48: // ValidatePosition
-			// Клиент просто сообщает свои координаты для синхронизации. 
-			// Пока ничего не делаем, просто чтобы не падало в default.
+		case 0x48: // ValidateLocation
+			if char == nil { break }
+			// Просто ничего не шлем в ответ, но ПРИНИМАЕМ координаты
+			if len(data) >= 17 {
+				char.X = int32(binary.LittleEndian.Uint32(data[5:9]))
+				char.Y = int32(binary.LittleEndian.Uint32(data[9:13]))
+				char.Z = int32(binary.LittleEndian.Uint32(data[13:17]))
+			}
+			// НЕ отправляем PackValidateLocation пока что, 
+			// проверим, исчезнет ли мусор в чате без него.
+
 
 		case 0x0E: // NewCharacter (Нажатие кнопки "Create")
 			log.Printf("GS: [%s] открыл экран создания персонажа", accountLogin)
@@ -193,39 +202,25 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 			sex := binary.LittleEndian.Uint32(data[offset+4 : offset+8])
 			classId := binary.LittleEndian.Uint32(data[offset+8 : offset+12])
 
-			log.Printf("GS: Создание персонажа [%s], Race: %d, Class: %d", charName, race, classId)
+			log.Printf("GS: Создание персонажа [%s], Class: %d", charName, classId)
 
-			// Временно используем фиксированные координаты начальной деревни людей
-			// Позже мы вынесем это в простую таблицу в БД
-			var startX int32 = -70880
-			var startY int32 = 257360
-			var startZ int32 = -3080
-
-			// Пустой список предметов (пока не настроим выдачу через БД)
-			startItems := []string{}
-
-			// ВЫЗОВ С 9 АРГУМЕНТАМИ
+			// Теперь передаем только 5 аргументов, как и просит пакет db
 			err := db.CreateCharacter(
 				accountLogin, 
 				charName, 
 				race, 
 				classId, 
-				sex, 
-				startX, 
-				startY, 
-				startZ, 
-				startItems,
+				sex,
 			)
 			
 			if err != nil {
-				log.Printf("GS: Ошибка создания в БД: %v", err)
+				log.Printf("GS: Ошибка создания: %v", err)
 				s.sendEncryptedPacket(conn, crypt, []byte{0x26, 0x00, 0x00, 0x00, 0x00})
 			} else {
 				s.sendEncryptedPacket(conn, crypt, []byte{0x25, 0x01, 0x00, 0x00, 0x00})
 				chars, _ := db.GetCharacters(accountLogin)
 				s.sendEncryptedPacket(conn, crypt, PackCharSelectionInfo(accountLogin, chars))
 			}
-
 
 		case 0x04: // Action (клик по объекту)
 			targetID := int32(binary.LittleEndian.Uint32(data[1:5]))
@@ -249,9 +244,74 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 			if char == nil { break }
 			s.sendEncryptedPacket(conn, crypt, PackTargetUnselected(char))
 
-		case 0x14: // RequestUseItem (Двойной клик по карте в инвентаре)
-			// Опкод 0x14 - использование. Для теста просто открываем карту 1665
-			s.sendEncryptedPacket(conn, crypt, PackShowMiniMap(1665))
+		case 0x14: // RequestUseItem
+			itemObjID := int32(binary.LittleEndian.Uint32(data[1:5]))
+			item, err := db.GetItemByObjID(itemObjID)
+			if err != nil {
+				log.Printf("GS: Предмет %d не найден в базе", itemObjID)
+				break
+			}
+
+			// Если это карта (ItemID 1665)
+			if item.ItemID == 1665 {
+				s.sendEncryptedPacket(conn, crypt, PackShowMiniMap(1665))
+				break
+			}
+
+			// Определяем индекс слота для куклы (Paperdoll Index)
+			var paperdollIdx int32 = -1
+			switch item.ItemID {
+			case 1:    paperdollIdx = 7  // R_HAND
+			case 354:  paperdollIdx = 10 // CHEST
+			case 381:  paperdollIdx = 11 // LEGS
+			case 2429: paperdollIdx = 9  // GLOVES
+			case 2453: paperdollIdx = 12 // FEET
+			}
+
+			if paperdollIdx != -1 {
+				// Если вещь уже надета — снимаем, иначе надеваем
+				if item.Loc == "PAPERDOLL" {
+					db.UnquipItem(item.ObjectID)
+					log.Printf("GS: [%s] снял предмет %d", char.Name, item.ItemID)
+				} else {
+					db.EquipItem(char.ObjectID, item.ObjectID, paperdollIdx)
+					log.Printf("GS: [%s] надел предмет %d в слот %d", char.Name, item.ItemID, paperdollIdx)
+					// Звук успешного надевания (0x2A)
+					s.sendEncryptedPacket(conn, crypt, PackEquipItemSuccess(paperdollIdx))
+				}
+
+				// --- ПОЛНОЕ ОБНОВЛЕНИЕ КЛИЕНТА ---
+				// 1. Получаем актуальное состояние из БД
+				pObj, pItem := getPaperdollArrays(char.ObjectID)
+				inventory, _ := db.GetInventory(char.ObjectID)
+
+				// 2. Обновляем визуал (модельку)
+				s.sendEncryptedPacket(conn, crypt, PackUserInfo(char, pObj, pItem))
+				
+				// 3. Обновляем инвентарь (рамки вокруг предметов)
+				s.sendEncryptedPacket(conn, crypt, PackItemList(inventory))
+				
+				// 4. Обновляем статы (P.Def, P.Atk) через пакет StatusUpdate
+				// Пока отправим базовый, чтобы клиент "проснулся"
+				s.sendEncryptedPacket(conn, crypt, PackStatusUpdate(char))
+			}
+
+		case 0x11: // RequestUnequipItem
+			slot := int32(binary.LittleEndian.Uint32(data[1:5]))
+			log.Printf("GS: [%s] запрос на снятие вещи из слота %d", char.Name, slot)
+			
+			// Нам нужно найти предмет, который надет в этом слоте
+			// Добавь функцию GetItemBySlot в db.go
+			item, err := db.GetItemBySlot(char.ObjectID, slot)
+			if err == nil {
+				db.UnquipItem(item.ObjectID)
+				
+				// Обновляем всё
+				pObj, pItem := getPaperdollArrays(char.ObjectID)
+				inventory, _ := db.GetInventory(char.ObjectID)
+				s.sendEncryptedPacket(conn, crypt, PackUserInfo(char, pObj, pItem))
+				s.sendEncryptedPacket(conn, crypt, PackItemList(inventory))
+			}
 
 		case 0x57: // RequestShowBoard
 			if char == nil { break }
@@ -357,22 +417,18 @@ func (s *GameServer) handleAdminCommand(conn net.Conn, crypt *GameCrypt, char *d
     }
 }
 
-// Получает два массива по 15 слотов: IDs предметов и их ObjectIDs
 func getPaperdollArrays(charID int32) ([15]int32, [15]int32) {
 	var objIDs [15]int32
 	var itemIDs [15]int32
 
-	items, err := db.GetInventory(charID)
-	if err != nil {
-		return objIDs, itemIDs
-	}
-
+	// ВАЖНО: убедись, что запрос в db.go или здесь точный
+	items, _ := db.GetInventory(charID) 
 	for _, it := range items {
-		if it.Loc == "PAPERDOLL" {
-			slot := it.LocData
-			if slot >= 0 && slot < 15 {
-				objIDs[slot] = it.ObjectID
-				itemIDs[slot] = it.ItemID
+		if it.Loc == "PAPERDOLL" { // Проверь регистр!
+			idx := it.LocData
+			if idx >= 0 && idx < 15 {
+				objIDs[idx] = it.ObjectID
+				itemIDs[idx] = it.ItemID
 			}
 		}
 	}

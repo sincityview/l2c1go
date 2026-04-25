@@ -253,7 +253,7 @@ func (s *Server) sendServerList(conn net.Conn, crypt *Crypt) {
 	buf := new(bytes.Buffer)
 	buf.WriteByte(0x04)                 // Opcode
 	buf.WriteByte(uint8(len(servers)))  // Кол-во серверов
-	buf.WriteByte(0x00)                 // Last Server ID
+	buf.WriteByte(0x01)                 // Last Server ID
 
 	for _, gs := range servers {
 		buf.WriteByte(uint8(gs.ID))     // 1 = Bartz, 2 = Sieghardt...
