@@ -234,12 +234,12 @@ func PackItemList(items []db.ItemData) []byte {
 	return packItemListWithWindow(items, 0) // по умолчанию не открываем
 }
 
-// packItemListWithWindow — используем для контроля открытия окна
+// packItemListWithWindow — используем для контроля открытия окна (рабочий вариант)
 func packItemListWithWindow(items []db.ItemData, windowType uint16) []byte {
 	buf := new(bytes.Buffer)
 	buf.WriteByte(0x27)
 
-	binary.Write(buf, binary.LittleEndian, windowType)      // 0 = просто список, 1 = открыть окно
+	binary.Write(buf, binary.LittleEndian, windowType)
 	binary.Write(buf, binary.LittleEndian, uint16(len(items)))
 
 	for _, it := range items {
@@ -260,7 +260,7 @@ func packItemListWithWindow(items []db.ItemData, windowType uint16) []byte {
 		binary.Write(buf, binary.LittleEndian, bodyPart)
 
 		binary.Write(buf, binary.LittleEndian, uint16(it.EnchantLevel))
-		binary.Write(buf, binary.LittleEndian, uint16(0)) // padding
+		binary.Write(buf, binary.LittleEndian, uint16(0))
 	}
 	return buf.Bytes()
 }
