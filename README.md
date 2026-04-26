@@ -47,6 +47,6 @@ VALUES ('0', '0', 'Subject', 'Message');
 3. Запустить `go run cmd/gameserver/main.go`.
 
 #### TODO:
-- Inventory items, eqip items
+- Spawnlist
 - NPC
 - Monsters
