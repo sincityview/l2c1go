@@ -233,7 +233,7 @@ func PackItemList(items []db.ItemData) []byte {
 	buf := new(bytes.Buffer)
 	buf.WriteByte(0x27)
 
-	binary.Write(buf, binary.LittleEndian, uint16(1)) 
+	binary.Write(buf, binary.LittleEndian, uint16(0)) 
 	binary.Write(buf, binary.LittleEndian, uint16(len(items)))
 
 	for _, it := range items {

@@ -460,3 +460,4 @@ func getSlotByBodyPart(bodyPart uint32) int32 {
 	}
 	return -1
 }
+
