@@ -3,8 +3,8 @@ package main
 
 import (
 	"log"
-	"l2c1go/internal/db"
-	"l2c1go/internal/loginserver"
+	"darkages/internal/db"
+	"darkages/internal/loginserver"
 )
 
 func main() {

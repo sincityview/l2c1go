@@ -1,4 +1,4 @@
-module l2c1go
+module darkages
 
 go 1.26.1
 

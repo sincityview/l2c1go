@@ -141,6 +141,12 @@ func getNextObjectID() (int32, error) {
 }
 
 func CreateCharacter(login, name string, race, classId, sex uint32) error {
+    var exists int
+    _ = DB.QueryRow("SELECT COUNT(*) FROM characters WHERE char_name = ?", name).Scan(&exists)
+    if exists > 0 {
+        return fmt.Errorf("name_already_exists")
+    }
+
 	tx, err := DB.Begin()
 	if err != nil { return err }
 
@@ -321,20 +327,21 @@ func GetItemByObjID(objID int32) (ItemData, error) {
 	return it, err
 }
 
+
 func EquipItem(charId, itemObjId int32, slot int32) error {
-	tx, err := DB.Begin()
-	if err != nil { return err }
+    tx, err := DB.Begin() // Теперь DB будет видна, так как она в этом же файле
+    if err != nil { return err }
 
-	// Снимаем только то, что уже надето В ЭТОМ ЖЕ СЛОТЕ
-	_, _ = tx.Exec("UPDATE items SET loc = 'INVENTORY', loc_data = 0 WHERE owner_id = ? AND loc = 'PAPERDOLL' AND loc_data = ?", charId, slot)
+    // Снимаем старое
+    _, err = tx.Exec("UPDATE items SET loc = 'INVENTORY', loc_data = 0 WHERE owner_id = ? AND loc = 'PAPERDOLL' AND loc_data = ?", charId, slot)
+    if err != nil { tx.Rollback(); return err }
 
-	// Надеваем новую вещь
-	_, err = tx.Exec("UPDATE items SET loc = 'PAPERDOLL', loc_data = ? WHERE object_id = ?", slot, itemObjId)
-	
-	if err != nil { tx.Rollback(); return err }
-	return tx.Commit()
+    // Надеваем новое
+    _, err = tx.Exec("UPDATE items SET loc = 'PAPERDOLL', loc_data = ? WHERE object_id = ?", slot, itemObjId)
+    if err != nil { tx.Rollback(); return err }
+
+    return tx.Commit()
 }
-
 
 func UnquipItem(itemObjId int32) error {
 	_, err := DB.Exec("UPDATE items SET loc = 'INVENTORY', loc_data = 0 WHERE object_id = ?", itemObjId)

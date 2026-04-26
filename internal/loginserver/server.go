@@ -8,7 +8,7 @@ import (
 	"log"
 	"net"
 
-	"l2c1go/internal/db"
+	"darkages/internal/db"
 )
 
 type Server struct {
@@ -79,7 +79,6 @@ func (s *Server) handleConnection(conn net.Conn) {
 			ok, err := db.CheckAccount(login, pass, clientIP)
 			if err != nil {
 				log.Printf("LS: DB Error: %v", err)
-				// Исправлено: передаем crypt и reason (0x01)
 				s.sendLoginFail(conn, crypt, 0x01) 
 				break
 			}
@@ -87,7 +86,6 @@ func (s *Server) handleConnection(conn net.Conn) {
 			if ok {
 				accountLogin = login
 				log.Printf("LS: Account [%s] authorized from IP: %s", login, clientIP)
-				// ВАЖНО: Если у тебя нет метода sendLoginSuccess, используй sendLoginOk
 				s.sendLoginOk(conn, crypt, 0x11223344, 0x55667788) 
 			} else {
 				log.Printf("LS: Login failed for [%s]", login)
@@ -124,8 +122,8 @@ func (s *Server) handleConnection(conn net.Conn) {
 			gender := binary.LittleEndian.Uint32(data[37:41])
 			classId := binary.LittleEndian.Uint32(data[41:45])
 
-			// Передаем все 9 аргументов для твоей новой db.go
-			if err := db.CreateCharacter(accountLogin, charName, race, classId, gender, 0, 0, 0, []string{}); err != nil {
+			// ИСПРАВЛЕНО: Теперь ровно 5 аргументов, как в твоем db.go
+			if err := db.CreateCharacter(accountLogin, charName, race, classId, gender); err != nil {
 				log.Printf("DB Error: %v", err)
 				s.sendCharacterCreateFail(conn, crypt)
 				continue
@@ -139,7 +137,6 @@ func (s *Server) handleConnection(conn net.Conn) {
 		}
 	}
 }
-
 
 // ==================== Packet Helpers (добавлено сюда) ====================
 
