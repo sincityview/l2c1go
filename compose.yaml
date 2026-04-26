@@ -1,19 +1,20 @@
-name: l2c1go-postgresql
+name: darkages
 
 services:
 
   db:
-    image: postgres:15-alpine
-    container_name: l2c1-db
+    image: mariadb:11
+    container_name: mariadb
     restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: secret
-      POSTGRES_DB: l2c1
+      MARIADB_ROOT_PASSWORD: mariadb-root-password
+      MARIADB_DATABASE: darkages
+      MARIADB_USER: mariadb-user
+      MARIADB_PASSWORD: mariadb-password
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - l2c1go-postgresql:/var/lib/postgresql/data
+      - mariadb:/var/lib/mysql
 
   adminer:
     image: adminer
@@ -25,5 +26,5 @@ services:
       - db
 
 volumes:
-  l2c1go-postgresql:
+  mariadb:
 

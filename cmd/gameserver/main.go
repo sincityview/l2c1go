@@ -2,9 +2,9 @@
 package main
 
 import (
-	"l2c1go/internal/gameserver"
+	"darkages/internal/gameserver"
 	"log"
-	"l2c1go/internal/db"
+	"darkages/internal/db"
 )
 
 
