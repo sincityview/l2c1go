@@ -106,14 +106,22 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 			s.sendEncryptedPacket(conn, crypt, PackQuestList())
 			s.sendEncryptedPacket(conn, crypt, PackSkillList())
             
-            // В С1 после этого клиент обычно шлет пакет 0x03 (EnterWorld)
+		case 0x0F: // RequestItemList (Tab / Инвентарь)
+			if char == nil {
+				log.Printf("GS: RequestItemList — char == nil")
+				break
+			}
+			log.Printf("GS: [%s] запрашивает инвентарь (0x0F)", char.Name)
 
-		case 0x0F: // RequestItemList от клиента
-			if char == nil { break }
-			log.Printf("GS: [%s] запрашивает инвентарь", char.Name)
-			inventory, _ := db.GetInventory(char.ObjectID)
-			// Теперь шлем правильный пакет 0x27
-			s.sendEncryptedPacket(conn, crypt, PackItemList(inventory))
+			inventory, err := db.GetInventory(char.ObjectID)
+			if err != nil {
+				log.Printf("GS: Ошибка GetInventory: %v", err)
+			}
+
+			log.Printf("GS: Найдено %d предметов", len(inventory))
+
+			// Отправляем с windowType = 1 → клиент открывает окно инвентаря
+			s.sendEncryptedPacket(conn, crypt, packItemListWithWindow(inventory, 1))
 
 		case 0x01: // MoveBackwardToLocation
 			if char == nil { break }
@@ -170,22 +178,20 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 			if char == nil { break }
 			log.Printf("GS: [%s] запрашивает вход в мир (EnterWorld)", char.Name)
 
-			// Получаем актуальные данные
 			inventory, _ := db.GetInventory(char.ObjectID)
 			pObj, pItem := getPaperdollArrays(char.ObjectID)
 
-			// 1. UserInfo — самый важный пакет для спавна
 			s.sendEncryptedPacket(conn, crypt, PackUserInfo(char, pObj, pItem))
 			
-			// 2. Список вещей
 			time.Sleep(100 * time.Millisecond)
-			s.sendEncryptedPacket(conn, crypt, PackItemList(inventory))
+			s.sendEncryptedPacket(conn, crypt, packItemListWithWindow(inventory, 0))
             
-            // 3. Системное приветствие (опционально)
-			// Вместо PackSystemMessage(34)
+			// ←←← ДОБАВЛЯЕМ ЭТО
+			time.Sleep(50 * time.Millisecond)
+			s.sendEncryptedPacket(conn, crypt, PackItemList(inventory)) // второй раз с window=1
+
 			welcomeText := "Welcome to Dark Ages!"
 			s.sendEncryptedPacket(conn, crypt, PackSay2(0, 0x00, "Server", welcomeText))
-
 
 		case 0x48: // ValidateLocation
 			if char == nil { break }

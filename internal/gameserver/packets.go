@@ -231,34 +231,33 @@ func PackUserInfo(char *db.CharData, paperdollObj [15]int32, paperdollItem [15]i
 }
 
 func PackItemList(items []db.ItemData) []byte {
+	return packItemListWithWindow(items, 0) // по умолчанию не открываем
+}
+
+// packItemListWithWindow — используем для контроля открытия окна
+func packItemListWithWindow(items []db.ItemData, windowType uint16) []byte {
 	buf := new(bytes.Buffer)
 	buf.WriteByte(0x27)
 
-	binary.Write(buf, binary.LittleEndian, uint16(0)) 
+	binary.Write(buf, binary.LittleEndian, windowType)      // 0 = просто список, 1 = открыть окно
 	binary.Write(buf, binary.LittleEndian, uint16(len(items)))
 
 	for _, it := range items {
-		binary.Write(buf, binary.LittleEndian, uint16(0)) // type1
+		binary.Write(buf, binary.LittleEndian, uint16(0))           // type1
 		binary.Write(buf, binary.LittleEndian, uint32(it.ObjectID))
 		binary.Write(buf, binary.LittleEndian, uint32(it.ItemID))
 		binary.Write(buf, binary.LittleEndian, uint32(it.Count))
-		binary.Write(buf, binary.LittleEndian, uint16(0)) // type2
-		binary.Write(buf, binary.LittleEndian, uint16(0xFF)) // padding
+		binary.Write(buf, binary.LittleEndian, uint16(0))           // type2
+		binary.Write(buf, binary.LittleEndian, uint16(0))           // customType1
 
-		// ВАЖНО: В С1 тут должен быть флаг надетости (1 или 0)
 		isEquipped := uint16(0)
 		if it.Loc == "PAPERDOLL" {
 			isEquipped = 1
 		}
-		binary.Write(buf, binary.LittleEndian, isEquipped) 
+		binary.Write(buf, binary.LittleEndian, isEquipped)
 
-		// КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Бит-маска слота (BodyPart)
-		// Без этого клиент не знает, в какой слот "положить" иконку
-		var bodyPart uint32 = 0
-		if it.Loc == "PAPERDOLL" {
-			bodyPart = getBodyPartByID(it.ItemID)
-		}
-		binary.Write(buf, binary.LittleEndian, bodyPart) 
+		bodyPart := getBodyPartByID(it.ItemID)
+		binary.Write(buf, binary.LittleEndian, bodyPart)
 
 		binary.Write(buf, binary.LittleEndian, uint16(it.EnchantLevel))
 		binary.Write(buf, binary.LittleEndian, uint16(0)) // padding
@@ -268,11 +267,20 @@ func PackItemList(items []db.ItemData) []byte {
 
 func getBodyPartByID(itemID int32) uint32 {
 	switch itemID {
-	case 1, 6, 10, 2369, 2370: return 0x80  // Right Hand (Weapon)
-	case 1146, 425:           return 0x400 // Chest
-	case 1147, 461:           return 0x800 // Legs
-	case 2368:                return 0x200 // Gloves
-	case 2453:                return 0x1000 // Feet
+	// оружие
+	case 1, 6, 10, 2369, 2370, 2371, 2366:
+		return 0x80 // R_HAND
+	// броня
+	case 1146, 425:
+		return 0x400 // CHEST
+	case 1147, 461:
+		return 0x800 // LEGS
+	case 2368:
+		return 0x200 // GLOVES
+	case 2453:
+		return 0x1000 // FEET
+	case 2, 11, 2367: // шлемы
+		return 0x04
 	}
 	return 0
 }

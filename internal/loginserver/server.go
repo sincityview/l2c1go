@@ -152,7 +152,7 @@ func encodeUTF16(s string) []byte {
 	return res
 }
 
-// PackCharSelectionInfo — теперь доступна в loginserver
+// PackCharSelectionInfo — теперь используем версию из gameserver (самая полная)
 func PackCharSelectionInfo(login string, chars []db.CharData) []byte {
 	buf := new(bytes.Buffer)
 	buf.WriteByte(0x1F)
@@ -165,48 +165,57 @@ func PackCharSelectionInfo(login string, chars []db.CharData) []byte {
 	binary.Write(buf, binary.LittleEndian, uint32(len(chars)))
 
 	for _, char := range chars {
+		// ПОЛУЧАЕМ ПРЕДМЕТЫ ДЛЯ ОТОБРАЖЕНИЯ В ЛОББИ (как в gameserver)
+		pObj, pItem := db.GetPaperdollForLobby(char.ObjectID)
+
 		buf.Write(encodeUTF16(char.Name))
 		binary.Write(buf, binary.LittleEndian, uint32(char.ObjectID))
 		buf.Write(encodeUTF16(login))
-		binary.Write(buf, binary.LittleEndian, uint32(0x55555555)) // sessionId
-		binary.Write(buf, binary.LittleEndian, uint32(0))          // clanId
-		binary.Write(buf, binary.LittleEndian, uint32(0))          // static 0
+		binary.Write(buf, binary.LittleEndian, uint32(0x55555555)) // SessionID
+		binary.Write(buf, binary.LittleEndian, uint32(0))          // ClanID
+		binary.Write(buf, binary.LittleEndian, uint32(0))          // Placeholder
 
 		binary.Write(buf, binary.LittleEndian, uint32(char.Sex))
 		binary.Write(buf, binary.LittleEndian, uint32(char.Race))
-		binary.Write(buf, binary.LittleEndian, uint32(char.ClassID)) // Замени Class на ClassID
+		binary.Write(buf, binary.LittleEndian, uint32(char.ClassID))
 		binary.Write(buf, binary.LittleEndian, uint32(1)) // Active
 
-		binary.Write(buf, binary.LittleEndian, int32(-70880)) // x
-		binary.Write(buf, binary.LittleEndian, int32(257360)) // y
-		binary.Write(buf, binary.LittleEndian, int32(-3080))  // z
+		binary.Write(buf, binary.LittleEndian, int32(char.X))
+		binary.Write(buf, binary.LittleEndian, int32(char.Y))
+		binary.Write(buf, binary.LittleEndian, int32(char.Z))
 
-		binary.Write(buf, binary.LittleEndian, float64(100.0)) // hp
-		binary.Write(buf, binary.LittleEndian, float64(50.0))  // mp
+		binary.Write(buf, binary.LittleEndian, float64(char.CurHp))
+		binary.Write(buf, binary.LittleEndian, float64(char.CurMp))
 
-		binary.Write(buf, binary.LittleEndian, uint32(0)) // sp
-		binary.Write(buf, binary.LittleEndian, uint32(0)) // exp
+		binary.Write(buf, binary.LittleEndian, uint32(char.Sp))
+		binary.Write(buf, binary.LittleEndian, uint32(char.Exp))
 		binary.Write(buf, binary.LittleEndian, uint32(char.Level))
-		binary.Write(buf, binary.LittleEndian, uint32(0)) // karma
+		binary.Write(buf, binary.LittleEndian, uint32(char.Karma))
 
+		// 9 Reserved
 		for i := 0; i < 9; i++ {
 			binary.Write(buf, binary.LittleEndian, uint32(0))
 		}
 
-		for i := 0; i < 36; i++ {
-			binary.Write(buf, binary.LittleEndian, uint32(0))
+		// Paperdoll ObjectIDs
+		for i := 0; i < 15; i++ {
+			binary.Write(buf, binary.LittleEndian, uint32(pObj[i]))
 		}
 
-		binary.Write(buf, binary.LittleEndian, uint32(0)) // hairStyle
-		binary.Write(buf, binary.LittleEndian, uint32(0)) // hairColor
-		binary.Write(buf, binary.LittleEndian, uint32(0)) // face
+		// Paperdoll ItemIDs
+		for i := 0; i < 15; i++ {
+			binary.Write(buf, binary.LittleEndian, uint32(pItem[i]))
+		}
 
-		binary.Write(buf, binary.LittleEndian, float64(100.0)) // maxHp
-		binary.Write(buf, binary.LittleEndian, float64(50.0))  // maxMp
+		binary.Write(buf, binary.LittleEndian, uint32(char.HairStyle))
+		binary.Write(buf, binary.LittleEndian, uint32(char.HairColor))
+		binary.Write(buf, binary.LittleEndian, uint32(char.Face))
 
-		binary.Write(buf, binary.LittleEndian, uint32(0)) // days left before delete
+		binary.Write(buf, binary.LittleEndian, float64(char.MaxHp))
+		binary.Write(buf, binary.LittleEndian, float64(char.MaxMp))
+
+		binary.Write(buf, binary.LittleEndian, uint32(0)) // delete flag
 	}
-
 	return buf.Bytes()
 }
 
