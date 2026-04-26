@@ -1,3 +1,4 @@
+// darkages/internal/gameserver/packets.go
 package gameserver
 
 import (

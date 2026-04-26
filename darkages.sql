@@ -84,6 +84,7 @@ CREATE TABLE `characters` (
   `language` varchar(2) DEFAULT NULL,
   `newbie` tinyint(1) DEFAULT 1,
   PRIMARY KEY (`charId`),
+  UNIQUE KEY `char_name_2` (`char_name`),
   KEY `account_name` (`account_name`),
   KEY `char_name` (`char_name`),
   KEY `clanid` (`clanid`),
@@ -210,6 +211,20 @@ CREATE TABLE `items` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
 
 
+DROP TABLE IF EXISTS `npc_data`;
+CREATE TABLE `npc_data` (
+  `id` int(11) NOT NULL,
+  `name` varchar(100) NOT NULL,
+  `type` varchar(20) DEFAULT 'L2Npc',
+  `template_id` int(11) NOT NULL,
+  `level` tinyint(3) DEFAULT 1,
+  `hp` int(11) DEFAULT 100,
+  `mp` int(11) DEFAULT 50,
+  `is_attackable` tinyint(1) DEFAULT 0,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+
+
 DROP TABLE IF EXISTS `object_id_registry`;
 CREATE TABLE `object_id_registry` (
   `obj_id` int(11) NOT NULL AUTO_INCREMENT,
@@ -217,4 +232,19 @@ CREATE TABLE `object_id_registry` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
 
 
--- 2026-04-25 18:43:26 UTC
+DROP TABLE IF EXISTS `spawnlist`;
+CREATE TABLE `spawnlist` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `npc_id` int(11) NOT NULL,
+  `x` int(11) NOT NULL,
+  `y` int(11) NOT NULL,
+  `z` int(11) NOT NULL,
+  `heading` int(11) NOT NULL DEFAULT 0,
+  `count` int(11) NOT NULL DEFAULT 1,
+  `respawn_delay` int(11) DEFAULT 60,
+  PRIMARY KEY (`id`),
+  KEY `npc_id` (`npc_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+
+
+-- 2026-04-26 15:38:21 UTC

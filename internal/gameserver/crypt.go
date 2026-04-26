@@ -1,4 +1,4 @@
-// l2c1go/internal/gameserver
+// darkages/internal/gameserver/crypt.go
 package gameserver
 
 import (

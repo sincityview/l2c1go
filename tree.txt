@@ -1,0 +1,24 @@
+.
+├── cmd
+│   ├── gameserver
+│   │   └── main.go
+│   └── loginserver
+│       └── main.go
+├── compose.yaml
+├── darkages.sql
+├── go.mod
+├── go.sum
+├── internal
+│   ├── db
+│   │   └── db.go
+│   ├── gameserver
+│   │   ├── crypt.go
+│   │   ├── packets.go
+│   │   └── server.go
+│   └── loginserver
+│       ├── crypt.go
+│       └── server.go
+├── README.md
+└── tree.txt
+
+8 directories, 14 files

@@ -1,4 +1,4 @@
-// l2c1go/cmd/loginserver
+// darkages/cmd/loginserver/main.go
 package main
 
 import (

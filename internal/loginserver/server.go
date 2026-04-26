@@ -1,4 +1,4 @@
-// l2c1go/internal/loginserver/server.go
+// darkages/internal/loginserver/server.go
 package loginserver
 
 import (

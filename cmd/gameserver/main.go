@@ -1,4 +1,4 @@
-// l2c1go/cmd/gameserver
+// darkages/cmd/gameserver/main.go
 package main
 
 import (
