@@ -43,7 +43,9 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 
 	var crypt *GameCrypt
 	var accountLogin string
-	var char *db.CharData // Состояние персонажа для всей сессии
+	var char *db.CharData
+
+	log.Printf("GS: New connection from %s", conn.RemoteAddr())
 
 	for {
 		header := make([]byte, 2)
@@ -180,6 +182,10 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 			time.Sleep(100 * time.Millisecond)
 			s.sendEncryptedPacket(conn, crypt, PackItemList(inventory))
 
+			// Запускаем периодическую отправку NPC (как в JS)
+			time.Sleep(200 * time.Millisecond)
+			s.startNpcTicker(conn, crypt)
+
 			welcomeText := "Welcome to Dark Ages!"
 			s.sendEncryptedPacket(conn, crypt, PackSay2(0, 0x00, "Server", welcomeText))
 
@@ -233,6 +239,26 @@ func (s *GameServer) handleConnection(conn net.Conn) {
 			// Сообщаем клиенту: "Да, ты выделил этот объект"
 			s.sendEncryptedPacket(conn, crypt, PackMyTargetSelected(targetID))
 
+		case 0x06: // Attack (0x06)
+			if char == nil { break }
+
+			targetID := int32(binary.LittleEndian.Uint32(data[1:5]))
+			log.Printf("GS: [%s] атакует цель %d", char.Name, targetID)
+
+			// Выбираем цель (работает для всех объектов)
+			s.sendEncryptedPacket(conn, crypt, PackMyTargetSelected(targetID))
+
+			// Бежим к любой цели (NPC или игрок)
+			log.Printf("GS: [%s] → MoveToPawn на цель %d", char.Name, targetID)
+			s.sendEncryptedPacket(conn, crypt, PackMoveToPawn(char, targetID, 40))
+
+			// Анимация атаки
+			time.Sleep(400 * time.Millisecond)
+			s.sendEncryptedPacket(conn, crypt, PackSocialAction(char.ObjectID, 5))
+
+			// Показываем урон (для любого таргета)
+			s.sendEncryptedPacket(conn, crypt, PackAttack(char.ObjectID, targetID, 25))
+			
 		case 0x1B: // SocialAction (Клиент нажал кнопку действия)
 			if char == nil {
 				break
@@ -387,18 +413,7 @@ func (s *GameServer) writeRaw(conn net.Conn, data []byte) {
 	_, _ = conn.Write(pkg)
 }
 
-func (s *GameServer) handleAdminCommand(conn net.Conn, crypt *GameCrypt, char *db.CharData, text string) {
-    switch text {
-    case ".whoami":
-        msg := fmt.Sprintf("Name: %s, ID: %d, Loc: %d %d %d", char.Name, char.ObjectID, char.X, char.Y, char.Z)
-        s.sendEncryptedPacket(conn, crypt, PackSay2(char.ObjectID, 0, "System", msg))
-    default:
-        s.sendEncryptedPacket(conn, crypt, PackSay2(char.ObjectID, 0, "System", "Unknown command"))
-    }
-}
-
 func getPaperdollArrays(charID int32) ([15]int32, [15]int32) {
-	// Теперь используем единственную реализацию из db
 	return db.GetPaperdollForLobby(charID)
 }
 
@@ -438,3 +453,30 @@ func getSlotByBodyPart(bodyPart uint32) int32 {
 	return -1
 }
 
+// sendNearbyNPCs — отправляем всех NPC из spawnlist (пока без радиуса)
+func (s *GameServer) sendNearbyNPCs(conn net.Conn, crypt *GameCrypt) {
+	npcs, err := db.GetSpawnList()
+	if err != nil {
+		log.Printf("GS: Не удалось загрузить spawnlist: %v", err)
+		return
+	}
+
+	log.Printf("GS: Отправляем %d NPC клиенту", len(npcs))
+
+	for _, npc := range npcs {
+		s.sendEncryptedPacket(conn, crypt, PackNpcInfo(npc))
+	}
+}
+
+// npcTicker — простой аналог VisibilityManager из JS
+func (s *GameServer) startNpcTicker(conn net.Conn, crypt *GameCrypt) {
+	ticker := time.NewTicker(3000 * time.Millisecond)
+	go func() {
+		for range ticker.C {
+			npcs, _ := db.GetSpawnList()
+			for _, npc := range npcs {
+				s.sendEncryptedPacket(conn, crypt, PackNpcInfo(npc))
+			}
+		}
+	}()
+}

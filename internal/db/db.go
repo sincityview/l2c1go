@@ -23,6 +23,18 @@ type GameServerInfo struct {
 	Port int
 }
 
+type NpcSpawn struct {
+	ID        int32
+	ObjectID  int32
+	NpcID     int32
+	Name      string
+	X, Y, Z   int32
+	Heading   int32
+	Level     int32
+	CurHp     int32
+	MaxHp     int32
+}
+
 type CharData struct {
 	AccountName string
 	ObjectID    int32
@@ -374,4 +386,33 @@ func GetPaperdollForLobby(charId int32) ([15]int32, [15]int32) {
 		}
 	}
 	return objIDs, itemIDs
+}
+
+func GetSpawnList() ([]NpcSpawn, error) {
+	rows, err := DB.Query(`
+		SELECT s.id, s.npc_id, n.name, s.x, s.y, s.z, s.heading, n.level, n.hp 
+		FROM spawnlist s
+		LEFT JOIN npc_data n ON s.npc_id = n.id
+		WHERE s.count > 0`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var npcs []NpcSpawn
+	for rows.Next() {
+		var n NpcSpawn
+		err := rows.Scan(&n.ID, &n.NpcID, &n.Name, &n.X, &n.Y, &n.Z, &n.Heading, &n.Level, &n.MaxHp)
+		if err != nil {
+			continue
+		}
+
+		n.ObjectID = n.ID + 3000000          // уникальный ObjectID
+		n.CurHp = n.MaxHp
+		if n.Name == "" {
+			n.Name = fmt.Sprintf("NPC_%d", n.NpcID)
+		}
+		npcs = append(npcs, n)
+	}
+	return npcs, nil
 }

@@ -340,15 +340,6 @@ func PackShowRadar(x, y, z int32) []byte {
 	return buf.Bytes()
 }
 
-// 0xBF - MyTargetSelected
-func PackMyTargetSelected(objID int32) []byte {
-	buf := new(bytes.Buffer)
-	buf.WriteByte(0xBF)
-	binary.Write(buf, binary.LittleEndian, objID)
-	binary.Write(buf, binary.LittleEndian, uint16(0)) // Разница в уровнях (0 - белый цвет)
-	return buf.Bytes()
-}
-
 // 0x3A - TargetUnselected (Отмена таргета)
 func PackTargetUnselected(char *db.CharData) []byte {
 	buf := new(bytes.Buffer)
@@ -417,3 +408,107 @@ func PackStatusUpdate(char *db.CharData) []byte {
 	
 	return buf.Bytes()
 }
+
+// PackNpcInfo — подогнано под твой JS-код + реальный npc_id=7283
+func PackNpcInfo(npc db.NpcSpawn) []byte {
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0x22)
+
+	binary.Write(buf, binary.LittleEndian, npc.ObjectID)
+	binary.Write(buf, binary.LittleEndian, npc.NpcID)        // 7283
+	binary.Write(buf, binary.LittleEndian, uint32(0))         // canBeAttacked = 0 для NPC
+
+	binary.Write(buf, binary.LittleEndian, int32(npc.X))
+	binary.Write(buf, binary.LittleEndian, int32(npc.Y))
+	binary.Write(buf, binary.LittleEndian, int32(npc.Z))
+	binary.Write(buf, binary.LittleEndian, int32(npc.Heading))
+
+	binary.Write(buf, binary.LittleEndian, uint32(0))   // MAtkSpd
+	binary.Write(buf, binary.LittleEndian, uint32(0))   // PAtkSpd
+	binary.Write(buf, binary.LittleEndian, uint32(120)) // RunSpeed
+	binary.Write(buf, binary.LittleEndian, uint32(80))  // WalkSpeed
+
+	binary.Write(buf, binary.LittleEndian, uint32(50))
+	binary.Write(buf, binary.LittleEndian, uint32(20))
+	binary.Write(buf, binary.LittleEndian, uint32(50))
+	binary.Write(buf, binary.LittleEndian, uint32(20))
+	binary.Write(buf, binary.LittleEndian, uint32(50))
+	binary.Write(buf, binary.LittleEndian, uint32(20))
+
+	binary.Write(buf, binary.LittleEndian, float32(1.1))
+	binary.Write(buf, binary.LittleEndian, float32(1.0))
+
+	binary.Write(buf, binary.LittleEndian, float32(8.0))   // collision_radius
+	binary.Write(buf, binary.LittleEndian, float32(17.0))  // collision_height (из dat)
+
+	binary.Write(buf, binary.LittleEndian, uint32(0))      // right hand
+	binary.Write(buf, binary.LittleEndian, uint32(0))      // chest
+	binary.Write(buf, binary.LittleEndian, uint32(0))      // left hand
+
+	binary.Write(buf, binary.LittleEndian, uint8(1))       // name above
+	binary.Write(buf, binary.LittleEndian, uint8(0))       // move type
+	binary.Write(buf, binary.LittleEndian, uint8(0))
+	binary.Write(buf, binary.LittleEndian, uint8(0))
+	binary.Write(buf, binary.LittleEndian, uint8(0))
+
+	buf.Write(encodeUTF16(""))
+	buf.Write(encodeUTF16(npc.Name))
+
+	binary.Write(buf, binary.LittleEndian, uint32(0))
+	binary.Write(buf, binary.LittleEndian, uint32(0))
+	binary.Write(buf, binary.LittleEndian, uint32(0))
+
+	return buf.Bytes()
+}
+
+func PackMyTargetSelected(objID int32) []byte {
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0xBF)
+	binary.Write(buf, binary.LittleEndian, objID)
+	binary.Write(buf, binary.LittleEndian, uint16(0))
+	return buf.Bytes()
+}
+
+func PackAttack(attackerID, targetID, damage int32) []byte {
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0x06)
+	binary.Write(buf, binary.LittleEndian, attackerID)
+	binary.Write(buf, binary.LittleEndian, targetID)
+	binary.Write(buf, binary.LittleEndian, damage)
+	binary.Write(buf, binary.LittleEndian, uint32(0))
+	return buf.Bytes()
+}
+
+// PackStatusUpdateFakeNPC — обновляет полоску HP у NPC (fake)
+func PackStatusUpdateFakeNPC(targetID, hpPercent int32) []byte {
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0x0E) // StatusUpdate
+	binary.Write(buf, binary.LittleEndian, targetID)
+	binary.Write(buf, binary.LittleEndian, uint32(1))           // кол-во атрибутов
+	binary.Write(buf, binary.LittleEndian, uint32(0x09))        // CUR_HP
+	binary.Write(buf, binary.LittleEndian, uint32(hpPercent))   // текущее HP
+	return buf.Bytes()
+}
+
+// PackMoveToPawn (0x75) — персонаж бежит к NPC (как в твоём JS)
+func PackMoveToPawn(char *db.CharData, targetID int32, distance int32) []byte {
+	buf := new(bytes.Buffer)
+	buf.WriteByte(0x75)
+
+	binary.Write(buf, binary.LittleEndian, char.ObjectID)
+	binary.Write(buf, binary.LittleEndian, targetID)
+	binary.Write(buf, binary.LittleEndian, distance)
+
+	// Позиция персонажа
+	binary.Write(buf, binary.LittleEndian, int32(char.X))
+	binary.Write(buf, binary.LittleEndian, int32(char.Y))
+	binary.Write(buf, binary.LittleEndian, int32(char.Z))
+
+	// Позиция цели (примерно)
+	binary.Write(buf, binary.LittleEndian, int32(char.X+30))
+	binary.Write(buf, binary.LittleEndian, int32(char.Y+30))
+	binary.Write(buf, binary.LittleEndian, int32(char.Z))
+
+	return buf.Bytes()
+}
+
