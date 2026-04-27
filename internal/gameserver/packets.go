@@ -409,52 +409,54 @@ func PackStatusUpdate(char *db.CharData) []byte {
 	return buf.Bytes()
 }
 
-// PackNpcInfo — максимально приближено к JS (NodeL2) для Gremlin
 func PackNpcInfo(npc db.NpcSpawn) []byte {
 	buf := new(bytes.Buffer)
-	buf.WriteByte(0x22)
+	buf.WriteByte(0x22) 
 
 	binary.Write(buf, binary.LittleEndian, npc.ObjectID)
-	binary.Write(buf, binary.LittleEndian, npc.NpcID+1000000) // как в JS
-	binary.Write(buf, binary.LittleEndian, uint32(1))          // canBeAttacked = 1 для Gremlin
+	binary.Write(buf, binary.LittleEndian, npc.NpcID + 1000000)
+	binary.Write(buf, binary.LittleEndian, uint32(1)) // canAttack
 
 	binary.Write(buf, binary.LittleEndian, int32(npc.X))
 	binary.Write(buf, binary.LittleEndian, int32(npc.Y))
 	binary.Write(buf, binary.LittleEndian, int32(npc.Z))
 	binary.Write(buf, binary.LittleEndian, int32(npc.Heading))
 
-	binary.Write(buf, binary.LittleEndian, uint32(0))     // MAtkSpd
-	binary.Write(buf, binary.LittleEndian, uint32(0))     // PAtkSpd
-	binary.Write(buf, binary.LittleEndian, uint32(140))   // baseRunSpeed
-	binary.Write(buf, binary.LittleEndian, uint32(80))    // baseWalkSpeed
+	binary.Write(buf, binary.LittleEndian, uint32(0))   // Placeholder
+	binary.Write(buf, binary.LittleEndian, uint32(333)) // MAtkSpd
+	binary.Write(buf, binary.LittleEndian, uint32(300)) // PAtkSpd
+	binary.Write(buf, binary.LittleEndian, uint32(120)) // RunSpeed
+	binary.Write(buf, binary.LittleEndian, uint32(80))  // WalkSpeed
 
-	// Swim / Float / Fly speeds
-	binary.Write(buf, binary.LittleEndian, uint32(50))
-	binary.Write(buf, binary.LittleEndian, uint32(20))
-	binary.Write(buf, binary.LittleEndian, uint32(50))
-	binary.Write(buf, binary.LittleEndian, uint32(20))
-	binary.Write(buf, binary.LittleEndian, uint32(50))
-	binary.Write(buf, binary.LittleEndian, uint32(20))
+	// Стандартный блок скоростей (6 штук)
+	for i := 0; i < 6; i++ {
+		binary.Write(buf, binary.LittleEndian, uint32(50))
+	}
 
-	binary.Write(buf, binary.LittleEndian, float32(1.1))   // MovementMultiplier
-	binary.Write(buf, binary.LittleEndian, float32(1.0))   // AttackSpeedMultiplier
+	// В C1 (419) множители часто FLOAT32 (4 байта), а не FLOAT64
+	// Если float64 не идет, пробуем float32
+	binary.Write(buf, binary.LittleEndian, float32(1.1)) 
+	binary.Write(buf, binary.LittleEndian, float32(1.0)) 
+	binary.Write(buf, binary.LittleEndian, float32(10.0)) 
+	binary.Write(buf, binary.LittleEndian, float32(15.0)) 
 
-	binary.Write(buf, binary.LittleEndian, float32(10.0))  // collisionRadius (из dat)
-	binary.Write(buf, binary.LittleEndian, float32(15.0))  // collisionHeight
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // R-Hand
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // Chest
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // L-Hand
 
-	binary.Write(buf, binary.LittleEndian, uint32(0))      // rightHand
-	binary.Write(buf, binary.LittleEndian, uint32(0))      // chest
-	binary.Write(buf, binary.LittleEndian, uint32(0))      // leftHand
+	// ВАЖНО: В С1 тут может быть 4 байта (C), а не 5 или 6.
+	buf.WriteByte(1) // name above
+	buf.WriteByte(0) // move type
+	buf.WriteByte(0) // combat
+	buf.WriteByte(0) // dead
 
-	binary.Write(buf, binary.LittleEndian, uint8(1))       // name above char
-	binary.Write(buf, binary.LittleEndian, uint8(0))       // move type
-	binary.Write(buf, binary.LittleEndian, uint8(0))       // attacking
-	binary.Write(buf, binary.LittleEndian, uint8(0))       // dead
-	binary.Write(buf, binary.LittleEndian, uint8(0))       // invisible
+	// СТРОКИ: В некоторых сборках C1 их ТРИ: Name, Title, и ClassName (или пустая)
+	buf.Write(encodeUTF16(npc.Name)) // Имя (отображается)
+	buf.Write(encodeUTF16(" "))      // Титул
+	buf.Write(encodeUTF16(""))       // ТРЕТЬЯ СТРОКА (иногда нужна для предотвращения крита)
 
-	buf.Write(encodeUTF16(""))                             // custom name
-	buf.Write(encodeUTF16(npc.Name))                       // title
-
+	// Добивка пакета (4 штуки D)
+	binary.Write(buf, binary.LittleEndian, uint32(0))
 	binary.Write(buf, binary.LittleEndian, uint32(0))
 	binary.Write(buf, binary.LittleEndian, uint32(0))
 	binary.Write(buf, binary.LittleEndian, uint32(0))
@@ -480,18 +482,26 @@ func PackAttack(attackerID, targetID, damage int32) []byte {
 	return buf.Bytes()
 }
 
-// PackStatusUpdateFakeNPC — обновляет полоску HP у NPC (fake)
 func PackStatusUpdateFakeNPC(targetID, hpPercent int32) []byte {
 	buf := new(bytes.Buffer)
-	buf.WriteByte(0x0E) // StatusUpdate
+	buf.WriteByte(0x0E)
 	binary.Write(buf, binary.LittleEndian, targetID)
-	binary.Write(buf, binary.LittleEndian, uint32(1))           // кол-во атрибутов
-	binary.Write(buf, binary.LittleEndian, uint32(0x09))        // CUR_HP
-	binary.Write(buf, binary.LittleEndian, uint32(hpPercent))   // текущее HP
+	
+	// Указываем, что обновляем 2 атрибута (CUR_HP и MAX_HP)
+	binary.Write(buf, binary.LittleEndian, uint32(2)) 
+	
+	// 1. Текущее HP (0x09)
+	binary.Write(buf, binary.LittleEndian, uint32(0x09))
+	binary.Write(buf, binary.LittleEndian, uint32(hpPercent))
+	
+	// 2. Максимальное HP (0x0A) — ставим 100, чтобы hpPercent работал как процент
+	binary.Write(buf, binary.LittleEndian, uint32(0x0A)) 
+	binary.Write(buf, binary.LittleEndian, uint32(100))
+	
 	return buf.Bytes()
 }
 
-// PackMoveToPawn (0x75) — персонаж бежит к NPC (как в твоём JS)
+// PackMoveToPawn (0x75) — заставляет персонажа бежать к NPC (как в JS)
 func PackMoveToPawn(char *db.CharData, targetID int32, distance int32) []byte {
 	buf := new(bytes.Buffer)
 	buf.WriteByte(0x75)
@@ -505,9 +515,9 @@ func PackMoveToPawn(char *db.CharData, targetID int32, distance int32) []byte {
 	binary.Write(buf, binary.LittleEndian, int32(char.Y))
 	binary.Write(buf, binary.LittleEndian, int32(char.Z))
 
-	// Позиция цели (примерно)
-	binary.Write(buf, binary.LittleEndian, int32(char.X+30))
-	binary.Write(buf, binary.LittleEndian, int32(char.Y+30))
+	// Позиция цели (с небольшим смещением, чтобы было видно движение)
+	binary.Write(buf, binary.LittleEndian, int32(char.X+40))
+	binary.Write(buf, binary.LittleEndian, int32(char.Y+40))
 	binary.Write(buf, binary.LittleEndian, int32(char.Z))
 
 	return buf.Bytes()

@@ -24,15 +24,16 @@ type GameServerInfo struct {
 }
 
 type NpcSpawn struct {
-	ID        int32
-	ObjectID  int32
-	NpcID     int32
-	Name      string
-	X, Y, Z   int32
-	Heading   int32
-	Level     int32
-	CurHp     int32
-	MaxHp     int32
+	ID           int32
+	ObjectID     int32
+	NpcID        int32
+	Name         string
+	X, Y, Z      int32
+	Heading      int32
+	Level        int32
+	CurHp        int32
+	MaxHp        int32
+	IsAttackable bool // Добавь это поле
 }
 
 type CharData struct {
@@ -389,10 +390,11 @@ func GetPaperdollForLobby(charId int32) ([15]int32, [15]int32) {
 }
 
 func GetSpawnList() ([]NpcSpawn, error) {
+	// Соединяем таблицу спавна с данными о типе NPC
 	rows, err := DB.Query(`
-		SELECT s.id, s.npc_id, n.name, s.x, s.y, s.z, s.heading, n.level, n.hp 
+		SELECT s.id, s.npc_id, n.name, s.x, s.y, s.z, s.heading, n.level, n.hp, n.is_attackable
 		FROM spawnlist s
-		LEFT JOIN npc_data n ON s.npc_id = n.id
+		JOIN npc_data n ON s.npc_id = n.id
 		WHERE s.count > 0`)
 	if err != nil {
 		return nil, err
@@ -402,16 +404,15 @@ func GetSpawnList() ([]NpcSpawn, error) {
 	var npcs []NpcSpawn
 	for rows.Next() {
 		var n NpcSpawn
-		err := rows.Scan(&n.ID, &n.NpcID, &n.Name, &n.X, &n.Y, &n.Z, &n.Heading, &n.Level, &n.MaxHp)
+		var isAttackable int
+		err := rows.Scan(&n.ID, &n.NpcID, &n.Name, &n.X, &n.Y, &n.Z, &n.Heading, &n.Level, &n.MaxHp, &isAttackable)
 		if err != nil {
 			continue
 		}
 
-		n.ObjectID = n.ID + 3000000          // уникальный ObjectID
+		n.ObjectID = n.ID + 3000000
 		n.CurHp = n.MaxHp
-		if n.Name == "" {
-			n.Name = fmt.Sprintf("NPC_%d", n.NpcID)
-		}
+		// Здесь можно добавить в структуру NpcSpawn поле IsAttackable bool
 		npcs = append(npcs, n)
 	}
 	return npcs, nil
