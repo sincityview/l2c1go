@@ -26,8 +26,7 @@
 
 #### Запуск:
 1. Поднять MariaDB (docker compose up)
-
-import darkages.sql
+2. Импортировать darkages.sql
 
 accounts:
 ```sql

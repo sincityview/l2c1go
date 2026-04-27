@@ -409,25 +409,26 @@ func PackStatusUpdate(char *db.CharData) []byte {
 	return buf.Bytes()
 }
 
-// PackNpcInfo — подогнано под твой JS-код + реальный npc_id=7283
+// PackNpcInfo — максимально приближено к JS (NodeL2) для Gremlin
 func PackNpcInfo(npc db.NpcSpawn) []byte {
 	buf := new(bytes.Buffer)
 	buf.WriteByte(0x22)
 
 	binary.Write(buf, binary.LittleEndian, npc.ObjectID)
-	binary.Write(buf, binary.LittleEndian, npc.NpcID)        // 7283
-	binary.Write(buf, binary.LittleEndian, uint32(0))         // canBeAttacked = 0 для NPC
+	binary.Write(buf, binary.LittleEndian, npc.NpcID+1000000) // как в JS
+	binary.Write(buf, binary.LittleEndian, uint32(1))          // canBeAttacked = 1 для Gremlin
 
 	binary.Write(buf, binary.LittleEndian, int32(npc.X))
 	binary.Write(buf, binary.LittleEndian, int32(npc.Y))
 	binary.Write(buf, binary.LittleEndian, int32(npc.Z))
 	binary.Write(buf, binary.LittleEndian, int32(npc.Heading))
 
-	binary.Write(buf, binary.LittleEndian, uint32(0))   // MAtkSpd
-	binary.Write(buf, binary.LittleEndian, uint32(0))   // PAtkSpd
-	binary.Write(buf, binary.LittleEndian, uint32(120)) // RunSpeed
-	binary.Write(buf, binary.LittleEndian, uint32(80))  // WalkSpeed
+	binary.Write(buf, binary.LittleEndian, uint32(0))     // MAtkSpd
+	binary.Write(buf, binary.LittleEndian, uint32(0))     // PAtkSpd
+	binary.Write(buf, binary.LittleEndian, uint32(140))   // baseRunSpeed
+	binary.Write(buf, binary.LittleEndian, uint32(80))    // baseWalkSpeed
 
+	// Swim / Float / Fly speeds
 	binary.Write(buf, binary.LittleEndian, uint32(50))
 	binary.Write(buf, binary.LittleEndian, uint32(20))
 	binary.Write(buf, binary.LittleEndian, uint32(50))
@@ -435,24 +436,24 @@ func PackNpcInfo(npc db.NpcSpawn) []byte {
 	binary.Write(buf, binary.LittleEndian, uint32(50))
 	binary.Write(buf, binary.LittleEndian, uint32(20))
 
-	binary.Write(buf, binary.LittleEndian, float32(1.1))
-	binary.Write(buf, binary.LittleEndian, float32(1.0))
+	binary.Write(buf, binary.LittleEndian, float32(1.1))   // MovementMultiplier
+	binary.Write(buf, binary.LittleEndian, float32(1.0))   // AttackSpeedMultiplier
 
-	binary.Write(buf, binary.LittleEndian, float32(8.0))   // collision_radius
-	binary.Write(buf, binary.LittleEndian, float32(17.0))  // collision_height (из dat)
+	binary.Write(buf, binary.LittleEndian, float32(10.0))  // collisionRadius (из dat)
+	binary.Write(buf, binary.LittleEndian, float32(15.0))  // collisionHeight
 
-	binary.Write(buf, binary.LittleEndian, uint32(0))      // right hand
+	binary.Write(buf, binary.LittleEndian, uint32(0))      // rightHand
 	binary.Write(buf, binary.LittleEndian, uint32(0))      // chest
-	binary.Write(buf, binary.LittleEndian, uint32(0))      // left hand
+	binary.Write(buf, binary.LittleEndian, uint32(0))      // leftHand
 
-	binary.Write(buf, binary.LittleEndian, uint8(1))       // name above
+	binary.Write(buf, binary.LittleEndian, uint8(1))       // name above char
 	binary.Write(buf, binary.LittleEndian, uint8(0))       // move type
-	binary.Write(buf, binary.LittleEndian, uint8(0))
-	binary.Write(buf, binary.LittleEndian, uint8(0))
-	binary.Write(buf, binary.LittleEndian, uint8(0))
+	binary.Write(buf, binary.LittleEndian, uint8(0))       // attacking
+	binary.Write(buf, binary.LittleEndian, uint8(0))       // dead
+	binary.Write(buf, binary.LittleEndian, uint8(0))       // invisible
 
-	buf.Write(encodeUTF16(""))
-	buf.Write(encodeUTF16(npc.Name))
+	buf.Write(encodeUTF16(""))                             // custom name
+	buf.Write(encodeUTF16(npc.Name))                       // title
 
 	binary.Write(buf, binary.LittleEndian, uint32(0))
 	binary.Write(buf, binary.LittleEndian, uint32(0))
